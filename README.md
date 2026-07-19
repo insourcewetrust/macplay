@@ -39,7 +39,7 @@ If you find MacPlay useful, those projects deserve your stars first.
   if the game crashes right away, it suggests trying another engine.
 - **Community ratings with context** — rate a game 1–5★; the report is sent anonymously
   *with your hardware profile and the engine used*, so "runs great" actually means
-  something. Ratings power [macgamers-hub](https://macgamers-hub.srv1418612.hstgr.cloud).
+  something.
 - **Honest about limits** — games with kernel anticheat (Fortnite, Valorant, Destiny 2…)
   are flagged as blocked instead of wasting your evening.
 - **English & French** UI, follows your system language.
@@ -50,8 +50,7 @@ If you find MacPlay useful, those projects deserve your stars first.
 
 **Requirements:** Apple Silicon (M1 or later), macOS 13+.
 
-1. Download **[MacPlay.dmg](../../releases/latest)** (also on
-   [macgamers-hub](https://macgamers-hub.srv1418612.hstgr.cloud)).
+1. Download **[MacPlay.dmg](../../releases/latest)**.
 2. Open the dmg, drag MacPlay to Applications.
 3. First launch: macOS will refuse to open it (this build isn't notarized — that
    requires a paid Apple Developer account). Click **Done** (not "Move to Trash"),
@@ -80,6 +79,10 @@ This alpha exists to collect feedback:
 
 ## Known limitations (alpha)
 
+- **Steam only** for now (Battle.net, Epic, GOG are on the wish list).
+- Steam's self-updates can be capricious under Wine — if Steam hangs or misbehaves
+  after an update, use **"Restart Steam cleanly"** in MacPlay's My Mac tab; that
+  resolves most of it.
 - Not notarized → the one-time Gatekeeper dance described above.
 - Launching a game restarts Steam if it was already open (Wine can't forward commands
   to a running Steam instance).
