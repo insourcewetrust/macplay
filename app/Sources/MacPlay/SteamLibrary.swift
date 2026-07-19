@@ -62,9 +62,9 @@ struct ReportStats: Codable {
 }
 
 enum Hub {
-    /// Hub base URL — override with: defaults write com.macplay.app hubURL <url>
+    /// Ratings backend URL — override with: defaults write com.macplay.app hubURL <url>
     static var baseURL: String {
-        UserDefaults.standard.string(forKey: "hubURL") ?? "http://localhost:3000"
+        UserDefaults.standard.string(forKey: "hubURL") ?? "https://macgamers-hub.srv1418612.hstgr.cloud"
     }
 
     /// Anonymous per-install id: lets a user update their own report, nothing more.
