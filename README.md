@@ -56,6 +56,36 @@ If you find MacPlay useful, those projects deserve your stars first.
    requires a paid Apple Developer account). Click **Done** (not "Move to Trash"),
    then go to **System Settings → Privacy & Security → Open Anyway**. One time only.
 
+## What it touches (security)
+
+Fair question for any app, doubly so for an alpha you found on Reddit. Short version:
+**no admin password, no root, no sandbox escape into your data.** Everything is in the
+open — read [`app/Sources/MacPlay/Engine.swift`](app/Sources/MacPlay/Engine.swift), it's
+the whole story.
+
+What MacPlay **does**:
+
+- **Writes only to folders you already own** — `~/Applications/Sikarugir/` (the Steam
+  wrapper) and `~/Library/Caches/macplay` + `~/.cache/winetricks` (downloads). It never
+  writes to `/System`, `/Library`, or anywhere privileged.
+- **Downloads and runs third-party components at setup** — the Sikarugir wrapper, Wine
+  engines, winetricks and Steam's installer, from GitHub, `raw.githubusercontent.com` and
+  Steam's CDN. This is the same thing every Wine wrapper (Sikarugir, Whisky, CrossOver)
+  does; it's how Windows games run on a Mac at all.
+- **Runs standard system binaries** via shell: `curl`, `tar`, `xattr`, `chmod`, `open`,
+  `sysctl`, `system_profiler`, plus the bundled `wine`.
+- **Removes the quarantine flag** (`xattr -dr com.apple.quarantine`) from the wrapper it
+  downloaded, so Wine can launch — this is a deliberate, scoped Gatekeeper bypass on
+  MacPlay's own files only.
+- **Sends anonymous ratings** — when you rate a game, the score plus your hardware profile
+  (chip, RAM, macOS, engine used) is POSTed to the ratings backend. No account, no personal
+  data, and only when you click "Send".
+
+What it **never** does: ask for your password, request root, read your files/keychain/other
+apps, or install a background service or launch agent.
+
+Because it's open source, none of this is "trust me" — it's `grep`-able.
+
 ## Build from source
 
 ```bash
