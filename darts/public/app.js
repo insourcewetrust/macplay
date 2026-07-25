@@ -14,6 +14,7 @@ const S = {
   es: null,
   overlayDismissed: null,
   wasMyTurn: false,
+  scoreForAll: false, // un seul téléphone : l'hôte saisit aussi pour les autres
 };
 
 const store = {
@@ -24,6 +25,8 @@ const store = {
   },
   saveSession(code, data) { localStorage.setItem(`darts301.s.${code}`, JSON.stringify(data)); },
   dropSession(code) { localStorage.removeItem(`darts301.s.${code}`); },
+  scoreForAll(code) { return localStorage.getItem(`darts301.all.${code}`) === '1'; },
+  setScoreForAll(code, on) { localStorage.setItem(`darts301.all.${code}`, on ? '1' : '0'); },
 };
 
 // ---------------------------------------------------------------------------
@@ -117,6 +120,7 @@ function enterMatch(data) {
   S.token = data.token;
   S.playerId = data.playerId;
   store.saveSession(data.code, { token: data.token, playerId: data.playerId });
+  S.scoreForAll = store.scoreForAll(data.code);
   history.replaceState(null, '', `/${data.code}`);
   render(data.state);
   connect();
@@ -168,12 +172,13 @@ function renderLobby(state) {
       <span class="name">${esc(p.name)}</span>
       ${p.isHost ? '<span class="tag">hôte</span>' : ''}
       ${p.id === S.playerId ? '<span class="tag">toi</span>' : ''}
+      ${p.local ? '<span class="tag">même tél.</span>' : ''}
       ${amHost && !p.isHost ? `<button class="kick" data-kick="${p.id}" aria-label="Retirer">✕</button>` : ''}
     </li>`).join('');
 
   const n = state.players.length;
   $('lobby-hint').textContent = n < 2
-    ? 'Partage le code : il faut au moins 2 joueurs.'
+    ? 'Partage le code, ou ajoute les joueurs qui marqueront sur ton téléphone.'
     : (amHost ? 'Tout le monde est là ? Lance la partie.' : 'En attente de l’hôte…');
 
   for (const seg of document.querySelectorAll('#lobby-settings-card .seg')) {
@@ -183,6 +188,7 @@ function renderLobby(state) {
     seg.dataset.disabled = amHost ? '0' : '1';
   }
 
+  $('add-player-row').hidden = !amHost || n >= 5;
   $('btn-start').disabled = !amHost || n < 2;
   $('btn-start').textContent = n < 2 ? 'Il manque des joueurs' : 'Lancer la partie';
   $('btn-shuffle').hidden = !amHost || n < 2;
@@ -193,6 +199,9 @@ function renderLobby(state) {
 function renderGame(state) {
   const mine = me(state);
   const myTurn = state.turnPlayerId === S.playerId;
+  const amHost = state.hostId === S.playerId;
+  // je saisis si c'est mon tour, ou si je tiens le téléphone pour tout le monde
+  const scoring = myTurn || (amHost && S.scoreForAll);
 
   $('game-leg').textContent = state.legsToWin > 1
     ? `Manche ${state.legNumber} · au meilleur des ${state.legsToWin * 2 - 1}`
@@ -205,15 +214,17 @@ function renderGame(state) {
   $('game-code').textContent = state.code;
 
   renderScoreboard(state);
-  renderTurnPanel(state, mine, myTurn);
-  renderAdvice(state, mine, myTurn);
-  renderKeypad(state, myTurn);
+  renderTurnPanel(state, myTurn, scoring);
+  renderAdvice(state, mine, myTurn, scoring);
+  renderKeypad(state, scoring, amHost);
   renderFeed(state);
 
   if (myTurn && !S.wasMyTurn) { buzz(70); }
   if (state.lastEvent && state.lastEvent.type === 'bust' && state.lastEvent.playerId === S.playerId) buzz([40, 60, 40]);
   S.wasMyTurn = myTurn;
   $('menu-advice').textContent = { off: 'aucun', checkout: 'finish', full: 'complet' }[state.settings.advice];
+  $('menu-scorer').textContent = S.scoreForAll ? 'oui' : 'non';
+  el('button[data-menu="scorer"]').hidden = !amHost;
 }
 
 function renderScoreboard(state) {
@@ -241,23 +252,29 @@ function renderScoreboard(state) {
   }).join('');
 }
 
-function renderTurnPanel(state, mine, myTurn) {
+function renderTurnPanel(state, myTurn, scoring) {
   const thrower = state.players.find((p) => p.id === state.turnPlayerId);
   if (!thrower) { $('turn-panel').innerHTML = ''; return; }
   const rest = `${plural(state.dartsLeft, 'fléchette', 'fléchettes')} restante${state.dartsLeft > 1 ? 's' : ''}`;
-  $('turn-panel').innerHTML = myTurn
-    ? `<div class="turn-banner"><span>🎯 À toi de jouer — ${thrower.score} points</span><span class="rest">${rest}</span></div>`
-    : `<div class="turn-banner other"><span>Au tour de <b>${esc(thrower.name)}</b> — ${thrower.score}</span><span class="rest">${rest}</span></div>`;
+  let head;
+  if (myTurn) head = `🎯 À toi de jouer — ${thrower.score} points`;
+  else if (scoring) head = `🖊 Tu saisis pour <b>${esc(thrower.name)}</b> — ${thrower.score}`;
+  else head = `Au tour de <b>${esc(thrower.name)}</b> — ${thrower.score}`;
+  $('turn-panel').innerHTML = `<div class="turn-banner ${myTurn ? '' : 'other'}">
+      <span>${head}</span><span class="rest">${rest}</span></div>`;
 }
 
-function renderAdvice(state, mine, myTurn) {
+function renderAdvice(state, mine, myTurn, scoring) {
   const box = $('advice');
-  const advice = mine ? mine.advice : null;
-  if (!advice || !mine) { box.hidden = true; return; }
+  const thrower = state.players.find((p) => p.id === state.turnPlayerId);
+  const focus = scoring && thrower ? thrower : mine;
+  const advice = focus ? focus.advice : null;
+  if (!advice || !focus) { box.hidden = true; return; }
   box.hidden = false;
-  const kicker = myTurn
-    ? `Conseil · fléchette ${4 - state.dartsLeft}/3`
-    : 'À ton prochain tour';
+  let kicker;
+  if (myTurn) kicker = `Conseil · fléchette ${4 - state.dartsLeft}/3`;
+  else if (scoring) kicker = `Conseil pour ${focus.name} · fléchette ${4 - state.dartsLeft}/3`;
+  else kicker = 'À ton prochain tour';
   const route = advice.kind === 'checkout' ? advice.path : advice.leaveCheckout;
   const path = route && route.length > 1
     ? `<div class="advice-path">${route.map((s) => `<span>${s}</span>`).join('')}</div>`
@@ -285,12 +302,22 @@ function buildKeypad() {
   ].join('');
 }
 
-function renderKeypad(state, myTurn) {
+function renderKeypad(state, scoring, amHost) {
   const pad = $('keypad');
   const wait = $('waiting');
-  const active = myTurn && !state.legWinner && state.status === 'playing';
+  const active = scoring && !state.legWinner && state.status === 'playing';
   pad.hidden = !active;
   wait.hidden = active;
+  const thrower = state.players.find((p) => p.id === state.turnPlayerId);
+
+  const banner = $('keypad-for');
+  if (thrower && state.turnPlayerId !== S.playerId) {
+    banner.hidden = false;
+    banner.innerHTML = `<span class="dot" style="background:${thrower.color}"></span>
+      Saisie pour <b>${esc(thrower.name)}</b>`;
+  } else {
+    banner.hidden = true;
+  }
 
   if (active) {
     const slots = [0, 1, 2].map((i) => {
@@ -304,10 +331,13 @@ function renderKeypad(state, myTurn) {
   } else if (state.status === 'playing') {
     const thrower = state.players.find((p) => p.id === state.turnPlayerId);
     const live = state.turnDarts.map((d) => `<span>${d.label}</span>`).join('');
+    const takeOver = amHost && !state.legWinner
+      ? `<button class="btn" id="btn-take-over">🖊 Saisir pour ${esc(thrower ? thrower.name : '')}</button>`
+      : '';
     wait.innerHTML = state.legWinner
       ? '<b>Manche terminée</b>'
       : `<div>Saisie en cours par <b>${esc(thrower ? thrower.name : '…')}</b></div>
-         <div class="live">${live || '<span>—</span>'}</div>`;
+         <div class="live">${live || '<span>—</span>'}</div>${takeOver}`;
   }
 }
 
@@ -392,6 +422,22 @@ function wire() {
     action('settings', { settings: { ...S.state.settings, [key]: value } });
   });
 
+  const addPlayer = () => {
+    const name = $('add-player-name').value.trim();
+    if (!name) return;
+    $('add-player-name').value = '';
+    action('add-player', { name });
+  };
+  $('btn-add-player').onclick = addPlayer;
+  $('add-player-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') addPlayer(); });
+
+  $('waiting').addEventListener('click', (e) => {
+    if (!e.target.closest('#btn-take-over')) return;
+    S.scoreForAll = true;
+    store.setScoreForAll(S.code, true);
+    render(S.state);
+  });
+
   $('btn-start').onclick = () => action('start');
   $('btn-shuffle').onclick = () => action('shuffle');
   $('btn-leave-lobby').onclick = leaveMatch;
@@ -405,7 +451,8 @@ function wire() {
 
   const throwSeg = (segId) => {
     S.mult = 'S';
-    action('throw', { segment: segId });
+    const target = S.state && S.state.turnPlayerId;
+    action('throw', { segment: segId, playerId: target !== S.playerId ? target : undefined });
   };
   $('quick-row').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-seg]');
@@ -432,6 +479,11 @@ function wire() {
         action('settings', { settings: { ...S.state.settings, advice: next } });
         break;
       }
+      case 'scorer':
+        S.scoreForAll = !S.scoreForAll;
+        store.setScoreForAll(S.code, S.scoreForAll);
+        render(S.state);
+        break;
       case 'lobby': action('lobby'); break;
       case 'leave': leaveMatch(); break;
       default: break;

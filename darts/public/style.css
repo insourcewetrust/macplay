@@ -136,6 +136,14 @@ small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); 
 .players .off { opacity: .45; }
 .players .kick { background: none; border: 0; color: var(--muted); font-size: 18px; cursor: pointer; padding: 4px 8px; }
 
+.add-player { display: flex; gap: 8px; margin-top: 12px; }
+.add-player input {
+  flex: 1; min-width: 0; min-height: 46px; padding: 10px 12px;
+  border-radius: 11px; border: 1px solid var(--line);
+  background: var(--bg-soft); color: var(--text); font: inherit; font-size: 15px;
+}
+.add-player .btn { width: auto; min-height: 46px; padding: 10px 16px; }
+
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .setting:last-child { border-bottom: 0; }
 .setting-label { font-size: 14px; font-weight: 600; }
@@ -241,6 +249,13 @@ small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); 
 
 .waiting { text-align: center; color: var(--muted); padding: 26px 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; }
 .waiting b { color: var(--text); }
+.waiting .btn { max-width: 320px; margin: 14px auto 0; }
+.scoring-for {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--muted); margin-bottom: 10px;
+}
+.scoring-for b { color: var(--text); font-size: 15px; }
+.scoring-for .dot { width: 12px; height: 12px; }
 .waiting .live { display: flex; gap: 6px; justify-content: center; margin-top: 10px; }
 .waiting .live span { background: var(--card-hi); border-radius: 8px; padding: 5px 10px; font-weight: 700; color: var(--text); }
 

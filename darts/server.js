@@ -65,7 +65,7 @@ function refreshPresence(match) {
   for (const c of clientsOf(match.code)) if (c.playerId) live.add(c.playerId);
   let changed = false;
   for (const p of match.players) {
-    const connected = live.has(p.id);
+    const connected = p.local ? true : live.has(p.id);
     if (p.connected !== connected) {
       p.connected = connected;
       changed = true;
@@ -239,6 +239,10 @@ function applyAction(match, player, body) {
     case 'shuffle':
       requireHost();
       match.shufflePlayers();
+      break;
+    case 'add-player':
+      requireHost();
+      match.addLocalPlayer(body.name);
       break;
     case 'kick': {
       requireHost();

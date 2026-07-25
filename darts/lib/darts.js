@@ -247,7 +247,7 @@ function advise(score, dartsLeft, doubleOut = true) {
   const headline = `Vise ${best.spoken}`;
   const detail = lastDart
     ? `Dernière fléchette : ${pts} pour laisser ${leave}${finishHint}.`
-    : `${pts}, il te restera ${leave}${finishHint}.`;
+    : `${pts} → reste ${leave}${finishHint}.`;
 
   return {
     kind: 'setup', target: best, path: null, leave, leaveCheckout, headline, detail,

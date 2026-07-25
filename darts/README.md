@@ -3,7 +3,8 @@
 Une petite appli web pour jouer au **301** (ou 101 / 501 / 701) à **2 à 5 joueurs**.
 Chacun ouvre la partie sur son téléphone, **saisit ses propres fléchettes**, et tout le
 monde voit le tableau **se mettre à jour en direct** — y compris fléchette par fléchette
-pendant qu'un joueur est en train de marquer.
+pendant qu'un joueur est en train de marquer. Un seul téléphone pour toute la tablée
+marche aussi : voir [plus bas](#un-seul-téléphone-pour-tout-le-monde).
 
 En prime, l'appli calcule pour chaque joueur **la stratégie du prochain coup** :
 la route de sortie quand elle existe (`Vise triple 20 — Sortie en 2 : T20 → D20`),
@@ -38,6 +39,20 @@ machine qui fait tourner le serveur.
    Les autres voient le score bouger en temps réel.
 
 ![Salon de la partie](docs/app-lobby.png)
+
+### Un seul téléphone pour tout le monde
+
+Pas besoin d'un appareil par joueur. Dans le salon, l'hôte ajoute les joueurs qui n'ont
+pas de téléphone (champ **« Joueur sans téléphone »**) : ils apparaissent dans la partie
+comme les autres.
+
+Pendant le match, quand c'est au tour d'un de ces joueurs, l'hôte voit le bouton
+**« 🖊 Saisir pour <nom> »**. Un tap, et le pavé reste sur son téléphone pour tous les
+tours suivants — le bandeau et le conseil affichent alors le nom du lanceur en cours.
+On repasse en mode « chacun son téléphone » par le menu `⋯` → *Je saisis pour tous*.
+
+Les deux modes se mélangent : ceux qui ont rejoint depuis leur propre téléphone
+saisissent chez eux, les autres marquent sur celui de l'hôte.
 
 Raccourcis pratiques : `T20 / T19 / T18 / D20 / D16 / Bull` en haut du pavé,
 sélecteur `Simple / Double / Triple` pour les autres nombres, `↺ Annuler` pour une
@@ -94,7 +109,7 @@ automatiquement grâce au jeton stocké dans le navigateur.
 | `POST` | `/api/matches/:code/join` | rejoindre (ou se reconnecter avec son jeton) |
 | `GET` | `/api/matches/:code` | état courant |
 | `GET` | `/api/matches/:code/stream` | flux SSE des états |
-| `POST` | `/api/matches/:code/action` | `start`, `throw`, `undo-dart`, `undo-turn`, `next-leg`, `rematch`, `settings`, … |
+| `POST` | `/api/matches/:code/action` | `start`, `throw`, `undo-dart`, `undo-turn`, `next-leg`, `rematch`, `settings`, `add-player`, … |
 
 L'état diffusé ne contient jamais les jetons des joueurs.
 

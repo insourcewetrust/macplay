@@ -60,6 +60,11 @@
   <div class="card">
     <h2 class="card-title">Joueurs <span id="lobby-count" class="pill">0/5</span></h2>
     <ul id="lobby-players" class="players"></ul>
+    <div class="add-player" id="add-player-row" hidden>
+      <input id="add-player-name" type="text" maxlength="16" autocomplete="off"
+             placeholder="Joueur sans téléphone" enterkeyhint="done">
+      <button id="btn-add-player" class="btn">Ajouter</button>
+    </div>
     <p class="hint" id="lobby-hint"></p>
   </div>
 
@@ -134,6 +139,7 @@
   <div id="advice" class="advice" hidden></div>
 
   <div id="keypad" class="keypad" hidden>
+    <div id="keypad-for" class="scoring-for" hidden></div>
     <div class="keypad-head">
       <div id="keypad-darts" class="darts"></div>
       <button id="btn-undo-dart" class="btn btn-ghost">↺ Annuler</button>
@@ -157,6 +163,7 @@
   <div id="menu" class="menu" hidden>
     <button data-menu="undo-turn">↺ Annuler la dernière volée</button>
     <button data-menu="advice">💡 Conseils : <span id="menu-advice"></span></button>
+    <button data-menu="scorer">🖊 Je saisis pour tous : <span id="menu-scorer"></span></button>
     <button data-menu="lobby">⇤ Retour au salon (hôte)</button>
     <button data-menu="leave">✕ Quitter la partie</button>
     <button data-menu="close" class="menu-close">Fermer</button>

@@ -118,6 +118,13 @@ class Match {
     return p;
   }
 
+  /** Joueur ajouté par l'hôte qui n'a pas d'appareil : il joue sur le téléphone de l'hôte. */
+  addLocalPlayer(name) {
+    const p = this.addPlayer(name);
+    p.local = true;
+    return p;
+  }
+
   removePlayer(id) {
     const idx = this.players.findIndex((p) => p.id === id);
     if (idx === -1) return;
@@ -444,7 +451,8 @@ class Match {
           id: p.id,
           name: p.name,
           color: COLORS[i % COLORS.length],
-          connected: p.connected,
+          connected: p.connected || Boolean(p.local),
+          local: Boolean(p.local),
           isHost: p.id === this.hostId,
           score,
           opened: this.opened[p.id] ?? true,
