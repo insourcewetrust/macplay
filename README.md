@@ -119,6 +119,13 @@ This alpha exists to collect feedback:
 - One wrapper, one engine at a time: the engine choice is global and applied per session.
 - Kernel-anticheat multiplayer games will never work through translation.
 
+## Also in this repo
+
+- **[`darts/`](darts/README.md)** — 🎯 *301*, a small real-time darts scoreboard for
+  2–5 players: everyone joins from their own phone, enters their own throws, watches
+  the match live, and gets a checkout/strategy hint for the next dart.
+  Zero-dependency Node server: `node darts/server.js`.
+
 ## License
 
 [MIT](LICENSE) — for MacPlay's own code and data. The components MacPlay downloads at

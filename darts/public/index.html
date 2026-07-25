@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12151c">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>301 — Fléchettes</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎯</text></svg>">
+</head>
+<body>
+
+<div id="toast" class="toast" hidden></div>
+
+<!-- ------------------------------------------------------------------ -->
+<section id="screen-home" class="screen">
+  <header class="hero">
+    <div class="hero-mark">🎯</div>
+    <h1>301</h1>
+    <p class="hero-sub">Fléchettes à 2–5 joueurs.<br>Chacun son téléphone, un seul tableau.</p>
+  </header>
+
+  <div class="card">
+    <label class="field">
+      <span>Ton prénom</span>
+      <input id="name-input" type="text" maxlength="16" autocomplete="nickname"
+             placeholder="Alex" enterkeyhint="done">
+    </label>
+
+    <button id="btn-create" class="btn btn-primary btn-lg">Créer une partie</button>
+
+    <div class="sep"><span>ou</span></div>
+
+    <label class="field">
+      <span>Code de la partie</span>
+      <input id="code-input" type="text" maxlength="4" inputmode="text" autocapitalize="characters"
+             autocomplete="off" spellcheck="false" class="code-field" placeholder="ABCD"
+             enterkeyhint="go">
+    </label>
+    <button id="btn-join" class="btn btn-lg">Rejoindre</button>
+  </div>
+
+  <p class="foot">Tout le monde doit être sur le même réseau que l'hôte du serveur.</p>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<section id="screen-lobby" class="screen" hidden>
+  <header class="bar">
+    <div>
+      <div class="bar-label">Code de la partie</div>
+      <div id="lobby-code" class="bar-code">····</div>
+      <div id="lobby-url" class="bar-sub"></div>
+    </div>
+    <button id="btn-share" class="btn btn-ghost">Partager</button>
+  </header>
+
+  <div class="card">
+    <h2 class="card-title">Joueurs <span id="lobby-count" class="pill">0/5</span></h2>
+    <ul id="lobby-players" class="players"></ul>
+    <p class="hint" id="lobby-hint"></p>
+  </div>
+
+  <div class="card" id="lobby-settings-card">
+    <h2 class="card-title">Réglages</h2>
+    <div class="setting">
+      <span class="setting-label">Score de départ</span>
+      <div class="seg" data-setting="start">
+        <button data-value="101">101</button>
+        <button data-value="301">301</button>
+        <button data-value="501">501</button>
+        <button data-value="701">701</button>
+      </div>
+    </div>
+    <div class="setting">
+      <span class="setting-label">Manches gagnantes</span>
+      <div class="seg" data-setting="legsToWin">
+        <button data-value="1">1</button>
+        <button data-value="2">2</button>
+        <button data-value="3">3</button>
+        <button data-value="5">5</button>
+      </div>
+    </div>
+    <div class="setting">
+      <span class="setting-label">Sortie<small>Terminer pile à 0</small></span>
+      <div class="seg" data-setting="doubleOut">
+        <button data-value="false">Simple</button>
+        <button data-value="true">Double</button>
+      </div>
+    </div>
+    <div class="setting">
+      <span class="setting-label">Entrée<small>Ouvrir sur un double</small></span>
+      <div class="seg" data-setting="doubleIn">
+        <button data-value="false">Libre</button>
+        <button data-value="true">Double</button>
+      </div>
+    </div>
+    <div class="setting">
+      <span class="setting-label">Conseils<small>Stratégie du prochain coup</small></span>
+      <div class="seg" data-setting="advice">
+        <button data-value="off">Aucun</button>
+        <button data-value="checkout">Finish</button>
+        <button data-value="full">Complet</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="btn-shuffle" class="btn">Mélanger l'ordre</button>
+    <button id="btn-start" class="btn btn-primary btn-lg">Lancer la partie</button>
+  </div>
+  <button id="btn-leave-lobby" class="btn btn-quiet">Quitter</button>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<section id="screen-game" class="screen" hidden>
+  <header class="bar bar-game">
+    <div>
+      <div class="bar-label" id="game-leg">Manche 1</div>
+      <div class="bar-sub" id="game-mode">301 · double out</div>
+    </div>
+    <div class="bar-right">
+      <span id="game-code" class="pill pill-quiet">····</span>
+      <button id="btn-menu" class="btn btn-ghost">⋯</button>
+    </div>
+  </header>
+
+  <ul id="scoreboard" class="scoreboard"></ul>
+
+  <div id="turn-panel"></div>
+
+  <div id="advice" class="advice" hidden></div>
+
+  <div id="keypad" class="keypad" hidden>
+    <div class="keypad-head">
+      <div id="keypad-darts" class="darts"></div>
+      <button id="btn-undo-dart" class="btn btn-ghost">↺ Annuler</button>
+    </div>
+    <div class="quick" id="quick-row"></div>
+    <div class="seg seg-mult" id="mult-row">
+      <button data-mult="S" class="on">Simple</button>
+      <button data-mult="D">Double</button>
+      <button data-mult="T">Triple</button>
+    </div>
+    <div class="grid" id="number-grid"></div>
+  </div>
+
+  <div id="waiting" class="waiting" hidden></div>
+
+  <details class="card feed-card">
+    <summary>Historique</summary>
+    <ul id="feed" class="feed"></ul>
+  </details>
+
+  <div id="menu" class="menu" hidden>
+    <button data-menu="undo-turn">↺ Annuler la dernière volée</button>
+    <button data-menu="advice">💡 Conseils : <span id="menu-advice"></span></button>
+    <button data-menu="lobby">⇤ Retour au salon (hôte)</button>
+    <button data-menu="leave">✕ Quitter la partie</button>
+    <button data-menu="close" class="menu-close">Fermer</button>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<div id="overlay" class="overlay" hidden>
+  <div class="overlay-card">
+    <div id="overlay-emoji" class="overlay-emoji">🏆</div>
+    <h2 id="overlay-title"></h2>
+    <p id="overlay-sub"></p>
+    <ul id="overlay-stats" class="overlay-stats"></ul>
+    <div class="actions">
+      <button id="btn-next-leg" class="btn btn-primary btn-lg">Manche suivante</button>
+      <button id="btn-rematch" class="btn btn-primary btn-lg">Rejouer</button>
+      <button id="btn-overlay-close" class="btn">Voir le tableau</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
