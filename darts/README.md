@@ -1,21 +1,33 @@
 # 🎯 301 — fléchettes multijoueur
 
 Une petite appli web pour jouer au **301** (ou 101 / 501 / 701) à **2 à 5 joueurs**.
-Chacun ouvre la partie sur son téléphone, **saisit ses propres fléchettes**, et tout le
-monde voit le tableau **se mettre à jour en direct** — y compris fléchette par fléchette
-pendant qu'un joueur est en train de marquer. Un seul téléphone pour toute la tablée
-marche aussi : voir [plus bas](#un-seul-téléphone-pour-tout-le-monde).
+Trois façons de jouer, la même appli :
 
-En prime, l'appli calcule pour chaque joueur **la stratégie du prochain coup** :
-la route de sortie quand elle existe (`Vise triple 20 — Sortie en 2 : T20 → D20`),
-et sinon la fléchette à jouer pour se laisser un bon double
-(`Dernière fléchette : 30 points pour laisser 36, à finir en D18`).
+- **📱 Sur un seul téléphone** — tout le monde marque sur le même appareil, sans
+  serveur ni réseau. C'est le mode de l'[APK Android](android/README.md).
+- **📶 Chacun son téléphone** — chacun saisit ses propres fléchettes et voit le tableau
+  bouger en direct, fléchette par fléchette.
+- **🤝 Les deux à la fois** — ceux qui ont leur téléphone jouent chez eux, les autres
+  marquent sur celui de l'hôte.
+
+Dans tous les cas, l'appli calcule **la stratégie du prochain coup**.
+
+Pour chaque joueur, elle affiche la route de sortie quand elle existe
+(`Vise triple 20 — Sortie en 2 : T20 → D20`), et sinon la fléchette à jouer pour se
+laisser un bon double (`Dernière fléchette : 30 points pour laisser 36, à finir en D18`).
 
 | Celui qui lance | Les autres, en direct |
 | --- | --- |
 | ![Pavé de saisie et conseil](docs/app-game.png) | ![Vue en direct](docs/app-live.png) |
 
-## Lancer
+## Sur Android, sans rien installer d'autre
+
+L'APK est prêt : **[`android/301-flechettes.apk`](android/301-flechettes.apk)** (37 Ko).
+On le copie sur le téléphone, on l'ouvre, on autorise l'installation, et c'est tout —
+aucune connexion, aucune permission demandée, Android 7.0 minimum.
+Détails et reconstruction : [`android/README.md`](android/README.md).
+
+## Lancer le serveur (pour jouer à plusieurs téléphones)
 
 ```bash
 node darts/server.js          # → http://localhost:3010
@@ -89,14 +101,21 @@ Le moteur (`lib/darts.js`) calcule :
 
 ```
 darts/
-├── server.js        HTTP + Server-Sent Events, sans dépendance
-├── lib/darts.js     segments, recherche de sortie, moteur de conseils (pur)
-├── lib/match.js     état d'une partie : joueurs, volées, bust, manches, statistiques
-├── public/          client web (HTML/CSS/JS, mobile d'abord)
-└── test/            tests unitaires (node --test)
+├── server.js            HTTP + Server-Sent Events, sans dépendance
+├── public/
+│   ├── lib/darts.js     segments, recherche de sortie, moteur de conseils (pur)
+│   ├── lib/match.js     état d'une partie : joueurs, volées, bust, manches, stats
+│   ├── lib/actions.js   application d'une action, avec ses règles d'autorisation
+│   └── app.js …         client web (HTML/CSS/JS, mobile d'abord)
+├── android/             empaquetage APK (WebView + assets), sans SDK Android
+└── test/                tests unitaires (node --test)
 ```
 
-Le serveur est la seule source de vérité : un client envoie une action
+Les trois fichiers de `public/lib/` tournent **à l'identique** dans Node et dans le
+navigateur : le mode hors ligne applique exactement les mêmes règles que le serveur,
+il les applique juste en local au lieu de passer par HTTP.
+
+En réseau, le serveur est la seule source de vérité : un client envoie une action
 (`POST /api/matches/:code/action`), le serveur valide (c'est bien ton tour ?) et diffuse
 l'état complet à tous les flux SSE ouverts. Un rechargement de page rejoint la partie
 automatiquement grâce au jeton stocké dans le navigateur.

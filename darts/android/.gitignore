@@ -1,0 +1,4 @@
+build/
+out/
+tools/*.jar
+keystore.p12

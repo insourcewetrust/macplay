@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { checkout, canCheckout, advise, leaveQuality } = require('../lib/darts');
+const { checkout, canCheckout, advise, leaveQuality } = require('../public/lib/darts');
 
 const route = (score, darts = 3, doubleOut = true) => {
   const path = checkout(score, darts, doubleOut);

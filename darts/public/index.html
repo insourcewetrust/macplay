@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>301 — Fléchettes</title>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎯</text></svg>">
 </head>
 <body>
@@ -30,27 +30,32 @@
              placeholder="Alex" enterkeyhint="done">
     </label>
 
-    <button id="btn-create" class="btn btn-primary btn-lg">Créer une partie</button>
+    <button id="btn-local" class="btn btn-primary btn-lg">Jouer sur cet appareil</button>
+    <p class="hint">Tout le monde marque sur ce téléphone. Aucune connexion nécessaire.</p>
 
-    <div class="sep"><span>ou</span></div>
+    <div id="net-block">
+      <div class="sep"><span>ou chacun son téléphone</span></div>
 
-    <label class="field">
-      <span>Code de la partie</span>
-      <input id="code-input" type="text" maxlength="4" inputmode="text" autocapitalize="characters"
-             autocomplete="off" spellcheck="false" class="code-field" placeholder="ABCD"
-             enterkeyhint="go">
-    </label>
-    <button id="btn-join" class="btn btn-lg">Rejoindre</button>
+      <button id="btn-create" class="btn btn-lg">Créer une partie en réseau</button>
+
+      <label class="field" style="margin-top:14px">
+        <span>Code de la partie</span>
+        <input id="code-input" type="text" maxlength="4" inputmode="text" autocapitalize="characters"
+               autocomplete="off" spellcheck="false" class="code-field" placeholder="ABCD"
+               enterkeyhint="go">
+      </label>
+      <button id="btn-join" class="btn btn-lg">Rejoindre</button>
+    </div>
   </div>
 
-  <p class="foot">Tout le monde doit être sur le même réseau que l'hôte du serveur.</p>
+  <p class="foot" id="home-foot">En réseau, tout le monde doit être sur le même Wi-Fi que l'hôte.</p>
 </section>
 
 <!-- ------------------------------------------------------------------ -->
 <section id="screen-lobby" class="screen" hidden>
   <header class="bar">
     <div>
-      <div class="bar-label">Code de la partie</div>
+      <div class="bar-label" id="lobby-kicker">Code de la partie</div>
       <div id="lobby-code" class="bar-code">····</div>
       <div id="lobby-url" class="bar-sub"></div>
     </div>
@@ -185,6 +190,9 @@
   </div>
 </div>
 
-<script src="/app.js"></script>
+<script src="lib/darts.js"></script>
+<script src="lib/match.js"></script>
+<script src="lib/actions.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

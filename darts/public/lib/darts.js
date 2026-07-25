@@ -1,11 +1,18 @@
-'use strict';
-
 /**
  * Moteur de fléchettes : segments, règles de sortie et conseils de stratégie.
  *
- * Tout est pur (pas d'état global mutable hors caches de calcul), pour pouvoir
- * être testé isolément et réutilisé côté serveur.
+ * Tout est pur (pas d'état global mutable hors caches de calcul) : le même fichier
+ * sert au serveur Node et au navigateur (y compris hors ligne dans l'APK).
  */
+
+(function (global, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else {
+    global.Darts301 = global.Darts301 || {};
+    global.Darts301.darts = factory();
+  }
+}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
 
 /** @typedef {{id: string, label: string, value: number, ring: 'S'|'D'|'T'|'MISS', number: number}} Segment */
 
@@ -260,15 +267,16 @@ function adviseTurn(score, doubleOut = true) {
   return advise(score, 3, doubleOut);
 }
 
-module.exports = {
-  SEGMENTS,
-  TARGETS,
-  BOGEY_NUMBERS,
-  segment,
-  isDouble,
-  checkout,
-  canCheckout,
-  leaveQuality,
-  advise,
-  adviseTurn,
-};
+  return {
+    SEGMENTS,
+    TARGETS,
+    BOGEY_NUMBERS,
+    segment,
+    isDouble,
+    checkout,
+    canCheckout,
+    leaveQuality,
+    advise,
+    adviseTurn,
+  };
+}));

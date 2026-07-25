@@ -1,9 +1,42 @@
-'use strict';
+/**
+ * État d'une partie de 301 : joueurs, volées, manches, statistiques.
+ * Utilisé tel quel par le serveur Node et par le client (mode hors ligne).
+ */
 
-const crypto = require('crypto');
-const {
-  segment, isDouble, checkout, advise, adviseTurn,
-} = require('./darts');
+(function (global, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./darts'));
+  else {
+    global.Darts301 = global.Darts301 || {};
+    global.Darts301.match = factory(global.Darts301.darts);
+  }
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (dartsLib) {
+  'use strict';
+
+  const {
+    segment, isDouble, checkout, advise, adviseTurn,
+  } = dartsLib;
+
+  // Web Crypto : disponible aussi bien dans Node 18+ que dans un navigateur.
+  const webcrypto = (typeof globalThis !== 'undefined' && globalThis.crypto) || null;
+
+  function randomBytes(n) {
+    const out = new Uint8Array(n);
+    webcrypto.getRandomValues(out);
+    return out;
+  }
+
+  function randomHex(n) {
+    return Array.from(randomBytes(n), (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /** Entier uniforme dans [0, max) — tirage rejeté pour rester non biaisé. */
+  function randomInt(max) {
+    const limit = Math.floor(256 / max) * max;
+    for (;;) {
+      const b = randomBytes(1)[0];
+      if (b < limit) return b % max;
+    }
+  }
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans I, O, 0, 1
 const MAX_PLAYERS = 5;
@@ -14,17 +47,17 @@ const COLORS = ['#ff5c5c', '#4ea8ff', '#3ddc84', '#ffb648', '#c078ff'];
 function newCode() {
   let out = '';
   for (let i = 0; i < 4; i++) {
-    out += CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)];
+    out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
   }
   return out;
 }
 
 function newId() {
-  return crypto.randomBytes(6).toString('hex');
+  return randomHex(6);
 }
 
 function newToken() {
-  return crypto.randomBytes(16).toString('hex');
+  return randomHex(16);
 }
 
 function cleanName(name) {
@@ -356,7 +389,7 @@ class Match {
   shufflePlayers() {
     if (this.status !== 'lobby') throw new HttpError(409, 'Impossible en cours de partie.');
     for (let i = this.players.length - 1; i > 0; i--) {
-      const j = crypto.randomInt(i + 1);
+      const j = randomInt(i + 1);
       [this.players[i], this.players[j]] = [this.players[j], this.players[i]];
     }
     this.lastEvent = { type: 'shuffle' };
@@ -513,7 +546,8 @@ class MatchStore {
   }
 }
 
-module.exports = {
-  Match, MatchStore, HttpError, defaultSettings, sanitizeSettings,
-  MAX_PLAYERS, MIN_PLAYERS, DARTS_PER_TURN, COLORS, newToken, cleanName,
-};
+  return {
+    Match, MatchStore, HttpError, defaultSettings, sanitizeSettings,
+    MAX_PLAYERS, MIN_PLAYERS, DARTS_PER_TURN, COLORS, newToken, cleanName,
+  };
+}));

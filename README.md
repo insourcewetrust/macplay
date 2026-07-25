@@ -121,10 +121,11 @@ This alpha exists to collect feedback:
 
 ## Also in this repo
 
-- **[`darts/`](darts/README.md)** — 🎯 *301*, a small real-time darts scoreboard for
-  2–5 players: everyone joins from their own phone, enters their own throws, watches
-  the match live, and gets a checkout/strategy hint for the next dart.
-  Zero-dependency Node server: `node darts/server.js`.
+- **[`darts/`](darts/README.md)** — 🎯 *301*, a small darts scoreboard for 2–5 players,
+  with checkout and strategy hints for the next dart. Plays on a single phone
+  (offline **[Android APK](darts/android/301-flechettes.apk)**, 37 KB, no permissions)
+  or with one phone per player over Wi-Fi, via a zero-dependency Node server:
+  `node darts/server.js`.
 
 ## License
 

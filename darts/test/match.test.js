@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { MatchStore } = require('../lib/match');
+const { MatchStore } = require('../public/lib/match');
 
 function setup(settings = {}, names = ['Alex', 'Bea']) {
   const store = new MatchStore();

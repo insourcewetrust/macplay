@@ -5,6 +5,9 @@
 const $ = (id) => document.getElementById(id);
 const el = (sel) => document.querySelector(sel);
 
+/** Dans l'APK (file://) il n'y a pas de serveur : seul le mode local existe. */
+const OFFLINE_ONLY = location.protocol === 'file:';
+
 const S = {
   code: null,
   token: null,
@@ -15,19 +18,79 @@ const S = {
   overlayDismissed: null,
   wasMyTurn: false,
   scoreForAll: false, // un seul téléphone : l'hôte saisit aussi pour les autres
+  local: null,        // partie jouée entièrement sur cet appareil (pas de serveur)
 };
 
+// Certains contextes (file://, navigation privée) refusent localStorage : on ne
+// veut pas que la partie s'arrête pour autant.
+const mem = new Map();
+function lsGet(key) {
+  try { return localStorage.getItem(key); } catch { return mem.has(key) ? mem.get(key) : null; }
+}
+function lsSet(key, value) {
+  mem.set(key, value);
+  try { localStorage.setItem(key, value); } catch { /* on garde la valeur en mémoire */ }
+}
+function lsDel(key) {
+  mem.delete(key);
+  try { localStorage.removeItem(key); } catch { /* ignoré */ }
+}
+
 const store = {
-  get name() { return localStorage.getItem('darts301.name') || ''; },
-  set name(v) { localStorage.setItem('darts301.name', v); },
+  get name() { return lsGet('darts301.name') || ''; },
+  set name(v) { lsSet('darts301.name', v); },
   session(code) {
-    try { return JSON.parse(localStorage.getItem(`darts301.s.${code}`) || 'null'); } catch { return null; }
+    try { return JSON.parse(lsGet(`darts301.s.${code}`) || 'null'); } catch { return null; }
   },
-  saveSession(code, data) { localStorage.setItem(`darts301.s.${code}`, JSON.stringify(data)); },
-  dropSession(code) { localStorage.removeItem(`darts301.s.${code}`); },
-  scoreForAll(code) { return localStorage.getItem(`darts301.all.${code}`) === '1'; },
-  setScoreForAll(code, on) { localStorage.setItem(`darts301.all.${code}`, on ? '1' : '0'); },
+  saveSession(code, data) { lsSet(`darts301.s.${code}`, JSON.stringify(data)); },
+  dropSession(code) { lsDel(`darts301.s.${code}`); },
+  scoreForAll(code) { return lsGet(`darts301.all.${code}`) === '1'; },
+  setScoreForAll(code, on) { lsSet(`darts301.all.${code}`, on ? '1' : '0'); },
 };
+
+// ---------------------------------------------------------------------------
+// Partie locale : tout tourne dans la page, avec le même moteur que le serveur
+// ---------------------------------------------------------------------------
+
+const LOCAL_KEY = 'darts301.localMatch';
+
+function newLocalMatch(hostName) {
+  const match = new Darts301.match.Match('LOCAL', {});
+  const host = match.addLocalPlayer(hostName);
+  match.hostId = host.id;
+  return { match, playerId: host.id };
+}
+
+function saveLocal() {
+  if (!S.local) return;
+  lsSet(LOCAL_KEY, JSON.stringify({ match: S.local, playerId: S.playerId }));
+}
+
+function loadLocal() {
+  const raw = lsGet(LOCAL_KEY);
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw);
+    const match = Object.assign(new Darts301.match.Match('LOCAL', {}), data.match);
+    return { match, playerId: data.playerId };
+  } catch {
+    return null;
+  }
+}
+
+function localAction(body) {
+  const player = S.local.player(S.playerId) || S.local.players[0];
+  try {
+    Darts301.actions.applyAction(S.local, player, body);
+  } catch (e) {
+    toast(e.message || 'Action impossible');
+    return;
+  }
+  S.local.rev += 1;
+  S.local.updatedAt = Date.now();
+  saveLocal();
+  render(S.local.snapshot());
+}
 
 // ---------------------------------------------------------------------------
 // Réseau
@@ -45,6 +108,7 @@ async function api(path, { method = 'POST', body } = {}) {
 }
 
 function action(name, extra = {}) {
+  if (S.local) return localAction({ action: name, ...extra });
   return api(`/api/matches/${S.code}/action`, { body: { token: S.token, action: name, ...extra } })
     .catch(toastError);
 }
@@ -95,6 +159,17 @@ function currentName() {
   return v || store.name || 'Joueur';
 }
 
+function startLocal(existing) {
+  const { match, playerId } = existing || newLocalMatch(currentName());
+  S.local = match;
+  S.code = 'LOCAL';
+  S.token = null;
+  S.playerId = playerId;
+  S.scoreForAll = true; // un seul appareil : il saisit pour tout le monde
+  saveLocal();
+  render(match.snapshot());
+}
+
 async function createMatch() {
   try {
     const data = await api('/api/matches', { body: { name: currentName() } });
@@ -127,11 +202,16 @@ function enterMatch(data) {
 }
 
 function leaveMatch() {
-  action('leave');
-  if (S.es) S.es.close();
-  store.dropSession(S.code);
+  if (S.local) {
+    S.local = null;
+    lsDel(LOCAL_KEY);
+  } else {
+    action('leave');
+    if (S.es) S.es.close();
+    store.dropSession(S.code);
+    if (!OFFLINE_ONLY) history.replaceState(null, '', '/');
+  }
   S.code = S.token = S.playerId = S.state = null;
-  history.replaceState(null, '', '/');
   showScreen('home');
 }
 
@@ -162,8 +242,11 @@ function render(state) {
 
 function renderLobby(state) {
   const amHost = state.hostId === S.playerId;
-  $('lobby-code').textContent = state.code;
-  $('lobby-url').textContent = `${location.host}/${state.code}`;
+  const isLocal = Boolean(S.local);
+  $('lobby-kicker').textContent = isLocal ? 'Partie sur cet appareil' : 'Code de la partie';
+  $('lobby-code').textContent = isLocal ? '🎯 301' : state.code;
+  $('lobby-url').textContent = isLocal ? 'Tout le monde marque ici' : `${location.host}/${state.code}`;
+  $('btn-share').hidden = isLocal;
   $('lobby-count').textContent = `${state.players.length}/5`;
 
   $('lobby-players').innerHTML = state.players.map((p) => `
@@ -172,14 +255,20 @@ function renderLobby(state) {
       <span class="name">${esc(p.name)}</span>
       ${p.isHost ? '<span class="tag">hôte</span>' : ''}
       ${p.id === S.playerId ? '<span class="tag">toi</span>' : ''}
-      ${p.local ? '<span class="tag">même tél.</span>' : ''}
+      ${p.local && !isLocal ? '<span class="tag">même tél.</span>' : ''}
       ${amHost && !p.isHost ? `<button class="kick" data-kick="${p.id}" aria-label="Retirer">✕</button>` : ''}
     </li>`).join('');
 
   const n = state.players.length;
-  $('lobby-hint').textContent = n < 2
-    ? 'Partage le code, ou ajoute les joueurs qui marqueront sur ton téléphone.'
-    : (amHost ? 'Tout le monde est là ? Lance la partie.' : 'En attente de l’hôte…');
+  if (n < 2) {
+    $('lobby-hint').textContent = isLocal
+      ? 'Ajoute au moins un adversaire pour commencer.'
+      : 'Partage le code, ou ajoute les joueurs qui marqueront sur ton téléphone.';
+  } else {
+    $('lobby-hint').textContent = amHost
+      ? 'Tout le monde est là ? Lance la partie.'
+      : 'En attente de l’hôte…';
+  }
 
   for (const seg of document.querySelectorAll('#lobby-settings-card .seg')) {
     const key = seg.dataset.setting;
@@ -211,6 +300,7 @@ function renderGame(state) {
     state.settings.doubleIn ? 'double in' : null,
     state.settings.doubleOut ? 'double out' : 'sortie simple',
   ].filter(Boolean).join(' · ');
+  $('game-code').hidden = Boolean(S.local);
   $('game-code').textContent = state.code;
 
   renderScoreboard(state);
@@ -393,10 +483,13 @@ function wire() {
   buildKeypad();
 
   $('name-input').value = store.name;
+  $('btn-local').onclick = () => startLocal();
   $('btn-create').onclick = createMatch;
   $('btn-join').onclick = () => joinMatch();
   $('code-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinMatch(); });
-  $('name-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('code-input').focus(); });
+  $('name-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { if (OFFLINE_ONLY) startLocal(); else $('code-input').focus(); }
+  });
 
   $('btn-share').onclick = async () => {
     const url = `${location.origin}/${S.code}`;
@@ -505,6 +598,19 @@ function wire() {
 
 async function boot() {
   wire();
+  $('net-block').hidden = OFFLINE_ONLY;
+  $('home-foot').hidden = OFFLINE_ONLY;
+
+  const saved = loadLocal();
+  if (saved && saved.match.players.length) {
+    startLocal(saved);
+    return;
+  }
+  if (OFFLINE_ONLY) {
+    showScreen('home');
+    return;
+  }
+
   const codeFromUrl = (location.pathname.replace(/\//g, '') || '').toUpperCase();
   if (/^[A-Z0-9]{4}$/.test(codeFromUrl)) {
     const sess = store.session(codeFromUrl);
