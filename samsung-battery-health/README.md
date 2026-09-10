@@ -4,9 +4,6 @@ A small, fully self-contained Android app that automates the
 [r/GalaxyS23 guide](https://www.reddit.com/r/GalaxyS23/comments/1k8ue99/extensive_guidecheck_your_battery_health_and/):
 it shows the real health of a Samsung battery with no PC, no Shizuku and no root.
 
-The UI is in English by default and in French on phones set to French
-(per-app language can be changed in Android 13+ app settings).
-
 ## What it shows
 
 - **Remaining capacity**: the exact value from the Samsung charge controller
