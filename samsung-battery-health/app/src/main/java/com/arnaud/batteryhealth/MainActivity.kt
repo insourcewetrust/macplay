@@ -121,7 +121,10 @@ class MainActivity : AppCompatActivity() {
                     healthPercent = null, healthSource = null, cycleCount = null,
                     cycleApprox = false, level = null, temperatureC = null,
                     voltageMv = null, estimatedFullMah = null, designMah = null,
-                    firstUseDate = null, capturedAt = null,
+                    firstUseDate = null, firstUseMillis = null, capturedAt = null,
+                    batteryModel = null, technology = null, statusCode = null,
+                    pluggedCode = null, healthCode = null, currentNowMa = null,
+                    remainingMah = null, history = emptyList(),
                     raw = android.util.Log.getStackTraceString(t),
                 )
             }
@@ -200,6 +203,12 @@ class MainActivity : AppCompatActivity() {
             firstUseRow.visibility = View.GONE
         }
 
+        findViewById<View>(R.id.cyclesHint).visibility =
+            if (info.cycleCount != null && info.cycleApprox) View.VISIBLE else View.GONE
+
+        bindDetails(info)
+        bindWear(info)
+
         rawText.text = info.raw
 
         // Le mode précis n'est proposé que si la valeur exacte du contrôleur
@@ -212,6 +221,69 @@ class MainActivity : AppCompatActivity() {
             if (precise && info.capturedAt != null) View.VISIBLE else View.GONE
         shizukuButton.visibility =
             if (!precise && BatteryReader.shizukuAvailable()) View.VISIBLE else View.GONE
+    }
+
+    private fun bindDetails(info: BatteryInfo) {
+        val unknown = getString(R.string.value_unknown)
+        findViewById<TextView>(R.id.modelValue).text = info.batteryModel ?: unknown
+        findViewById<TextView>(R.id.technologyValue).text = info.technology ?: unknown
+        findViewById<TextView>(R.id.statusValue).text = when (info.statusCode) {
+            android.os.BatteryManager.BATTERY_STATUS_CHARGING -> getString(R.string.status_charging)
+            android.os.BatteryManager.BATTERY_STATUS_DISCHARGING -> getString(R.string.status_discharging)
+            android.os.BatteryManager.BATTERY_STATUS_FULL -> getString(R.string.status_full)
+            android.os.BatteryManager.BATTERY_STATUS_NOT_CHARGING -> getString(R.string.status_not_charging)
+            else -> unknown
+        }
+        findViewById<TextView>(R.id.pluggedValue).text = when (info.pluggedCode) {
+            null -> unknown
+            0 -> getString(R.string.plugged_none)
+            android.os.BatteryManager.BATTERY_PLUGGED_AC -> getString(R.string.plugged_ac)
+            android.os.BatteryManager.BATTERY_PLUGGED_USB -> getString(R.string.plugged_usb)
+            android.os.BatteryManager.BATTERY_PLUGGED_WIRELESS -> getString(R.string.plugged_wireless)
+            else -> getString(R.string.plugged_other)
+        }
+        findViewById<TextView>(R.id.currentValue).text =
+            info.currentNowMa?.let { getString(R.string.current_format, it) } ?: unknown
+        findViewById<TextView>(R.id.remainingValue).text =
+            info.remainingMah?.let { getString(R.string.remaining_format, it) } ?: unknown
+        findViewById<TextView>(R.id.sysHealthValue).text = when (info.healthCode) {
+            android.os.BatteryManager.BATTERY_HEALTH_GOOD -> getString(R.string.sys_health_good)
+            android.os.BatteryManager.BATTERY_HEALTH_OVERHEAT -> getString(R.string.sys_health_overheat)
+            android.os.BatteryManager.BATTERY_HEALTH_DEAD -> getString(R.string.sys_health_dead)
+            android.os.BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> getString(R.string.sys_health_over_voltage)
+            android.os.BatteryManager.BATTERY_HEALTH_COLD -> getString(R.string.sys_health_cold)
+            android.os.BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE -> getString(R.string.sys_health_failure)
+            null -> unknown
+            else -> getString(R.string.sys_health_unknown)
+        }
+    }
+
+    private fun bindWear(info: BatteryInfo) {
+        val chart = findViewById<WearChartView>(R.id.wearChart)
+        val summary = findViewById<TextView>(R.id.wearSummary)
+        val exact = if (info.healthSource == HealthSource.ASOC) info.healthPercent else null
+        val projection = WearModel.build(info.firstUseMillis, info.history, exact)
+        chart.setProjection(projection)
+        if (projection == null) {
+            summary.text = getString(R.string.wear_no_data)
+            return
+        }
+        if (projection.slopePerDay >= 0) {
+            summary.text = getString(R.string.wear_flat)
+            return
+        }
+        val fmt = java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.ENGLISH)
+        val text = StringBuilder(
+            getString(R.string.wear_summary, projection.yearlyLoss, projection.monthlyLoss)
+        )
+        val d80 = projection.dateAt80?.let { fmt.format(java.util.Date(it)) }
+        val d70 = projection.dateAt70?.let { fmt.format(java.util.Date(it)) }
+        when {
+            d80 != null && d70 != null -> text.append(' ').append(getString(R.string.wear_dates, d80, d70))
+            d80 != null -> text.append(' ').append(getString(R.string.wear_date_80_only, d80))
+            d70 != null -> text.append(' ').append(getString(R.string.wear_dates, getString(R.string.never), d70))
+        }
+        summary.text = text
     }
 
     private fun copyAdbCommand() {

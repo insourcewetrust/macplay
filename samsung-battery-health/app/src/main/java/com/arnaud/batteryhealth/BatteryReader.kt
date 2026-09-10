@@ -26,7 +26,16 @@ data class BatteryInfo(
     val estimatedFullMah: Int?,
     val designMah: Int?,
     val firstUseDate: String?,
+    val firstUseMillis: Long?,
     val capturedAt: String?,
+    val batteryModel: String?,
+    val technology: String?,
+    val statusCode: Int?,
+    val pluggedCode: Int?,
+    val healthCode: Int?,
+    val currentNowMa: Int?,
+    val remainingMah: Int?,
+    val history: List<Pair<Long, Int>>,
     val raw: String,
 )
 
@@ -91,6 +100,44 @@ object BatteryReader {
         return "${digits.substring(6, 8)}/${digits.substring(4, 6)}/${digits.substring(0, 4)}"
     }
 
+    private fun firstUseToMillis(date: String?): Long? {
+        if (date == null) return null
+        return try {
+            java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.US).parse(date)?.time
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * Compteur de décharge cumulée Samsung (DischargeLevelData efsValue:128505).
+     * Divisé par 100 il donne le nombre de cycles complets équivalents, c'est
+     * le champ que le guide r/GalaxyS23 appelle "battery usage".
+     */
+    private fun parseCumulativeCycles(dump: String?): Int? {
+        if (dump.isNullOrBlank()) return null
+        return Regex("""DischargeLevelData\s+efsValue\s*[:=]\s*(\d+)""")
+            .find(dump)?.groupValues?.get(1)?.toIntOrNull()?.let { it / 100 }
+    }
+
+    /** Référence de la batterie (QrData efsValue:GH43-05145A+...). */
+    private fun parseBatteryModel(dump: String?): String? {
+        if (dump.isNullOrBlank()) return null
+        return Regex("""QrData\s+efsValue\s*[:=]\s*([A-Za-z0-9\-]+)""")
+            .find(dump)?.groupValues?.get(1)
+    }
+
+    private fun readHistory(prefs: android.content.SharedPreferences): List<Pair<Long, Int>> =
+        prefs.getString("history", null).orEmpty()
+            .split(';')
+            .mapNotNull { entry ->
+                val parts = entry.split(',')
+                val ts = parts.getOrNull(0)?.toLongOrNull()
+                val asoc = parts.getOrNull(1)?.toIntOrNull()
+                if (ts != null && asoc != null) ts to asoc else null
+            }
+            .sortedBy { it.first }
+
     private const val UEVENT_PATH = "/sys/class/power_supply/battery/uevent"
 
     /** Cherche une clé POWER_SUPPLY_*needle*=valeur dans un uevent sysfs. */
@@ -123,17 +170,29 @@ object BatteryReader {
                     runCmd("cat $it")?.trim()?.toIntOrNull()?.takeIf { v -> v in 1..100 }
                 }
             val cycle = parseCyclesFromDump(dump)
+                ?: parseCumulativeCycles(dump)
                 ?: parseUeventInt(uevent, "cycle")?.takeIf { it >= 0 }
                 ?: SYSFS_CYCLE_PATHS.firstNotNullOfOrNull {
                     runCmd("cat $it")?.trim()?.toIntOrNull()
                 }
 
             val firstUse = parseFirstUse(dump)
+            val model = parseBatteryModel(dump)
 
-            val editor = context.getSharedPreferences(SHELL_PREFS, Context.MODE_PRIVATE).edit()
+            val prefs = context.getSharedPreferences(SHELL_PREFS, Context.MODE_PRIVATE)
+            val editor = prefs.edit()
             asoc?.let { editor.putInt("asoc", it) }
             cycle?.let { editor.putInt("cycle", it) }
             firstUse?.let { editor.putString("first_use", it) }
+            model?.let { editor.putString("model", it) }
+            // Historique des captures (un point par jour) pour la courbe d'usure.
+            if (asoc != null) {
+                val now = System.currentTimeMillis()
+                val history = readHistory(prefs)
+                    .filter { now - it.first >= 86_400_000L }
+                    .plus(now to asoc)
+                editor.putString("history", history.joinToString(";") { "${it.first},${it.second}" })
+            }
             // Diagnostic complet, visible dans "données brutes".
             editor.putString("shell_dump", (dump ?: "empty").take(4000))
             editor.putString("shell_uevent", (uevent ?: "empty").take(2000))
@@ -244,6 +303,8 @@ object BatteryReader {
             }
             if (c == null) {
                 c = prefs.getInt("cycle", -1).takeIf { it >= 0 }
+                    ?: parseCumulativeCycles(prefs.getString("shell_dump", null))
+                if (c != null) cycleApprox = true
             }
             if (c == null && shizukuOk) {
                 c = SYSFS_CYCLE_PATHS.firstNotNullOfOrNull { path ->
@@ -304,6 +365,24 @@ object BatteryReader {
 
         val firstUseDate = prefs.getString("first_use", null)
             ?: safe("firstUse") { parseFirstUse(cachedDump) }
+        val batteryModel = prefs.getString("model", null)
+            ?: safe("model") { parseBatteryModel(cachedDump) }
+
+        // Infos système du broadcast et du BatteryManager, sans permission.
+        val technology = sticky?.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY)
+        val statusCode = sticky?.getIntExtra(BatteryManager.EXTRA_STATUS, -1)?.takeIf { it > 0 }
+        val pluggedCode = sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)?.takeIf { it >= 0 }
+        val healthCode = sticky?.getIntExtra(BatteryManager.EXTRA_HEALTH, -1)?.takeIf { it > 0 }
+        val currentNowMa = safe("currentNow") {
+            bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+                ?.takeIf { it != Int.MIN_VALUE }?.let { it / 1000 }
+        }
+        val remainingMah = chargeCounterUah?.let { it / 1000 }
+        var history = readHistory(prefs)
+        if (history.isEmpty() && health != null && source == HealthSource.ASOC) {
+            val ts = prefs.getLong("ts", 0L).takeIf { it > 0 } ?: System.currentTimeMillis()
+            history = listOf(ts to health)
+        }
 
         // Date de la dernière capture shell, seulement si la santé en provient.
         val capturedAt = if (source == HealthSource.ASOC && dump.isNullOrBlank()) {
@@ -355,7 +434,16 @@ object BatteryReader {
             estimatedFullMah = estimatedFullMah,
             designMah = designMah,
             firstUseDate = firstUseDate,
+            firstUseMillis = firstUseToMillis(firstUseDate),
             capturedAt = capturedAt,
+            batteryModel = batteryModel,
+            technology = technology,
+            statusCode = statusCode,
+            pluggedCode = pluggedCode,
+            healthCode = healthCode,
+            currentNowMa = currentNowMa,
+            remainingMah = remainingMah,
+            history = history,
             raw = raw,
         )
     }
