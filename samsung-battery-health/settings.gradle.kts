@@ -10,6 +10,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // spake2-java, dépendance transitive de Kadb pour l'appairage adb
+        maven("https://jitpack.io")
     }
 }
 rootProject.name = "BatteryHealth"
