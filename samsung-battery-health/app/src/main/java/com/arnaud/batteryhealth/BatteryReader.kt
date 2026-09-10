@@ -71,57 +71,82 @@ object BatteryReader {
     }
 
     fun read(context: Context): BatteryInfo {
-        val shizukuOk = shizukuAvailable() && shizukuGranted()
+        // Chaque valeur est lue indépendamment : une source qui échoue ne
+        // fait plus tomber les autres, et son erreur part dans `raw`.
+        val errors = StringBuilder()
+
+        fun <T> safe(label: String, block: () -> T?): T? = try {
+            block()
+        } catch (t: Throwable) {
+            errors.append('[').append(label).append("] ")
+                .append(android.util.Log.getStackTraceString(t)).append('\n')
+            null
+        }
+
+        val shizukuOk = safe("shizuku") { shizukuAvailable() && shizukuGranted() } ?: false
 
         // Mode précis, seulement si déjà débloqué.
-        val dump: String? = when {
-            hasDumpPermission(context) -> dumpService("battery")
-            shizukuOk -> {
-                // Rend l'app autonome pour les prochains lancements.
-                runShizuku("pm grant ${context.packageName} android.permission.DUMP")
-                runShizuku("dumpsys battery")
+        val dump: String? = safe("dump") {
+            when {
+                hasDumpPermission(context) -> dumpService("battery")
+                shizukuOk -> {
+                    // Rend l'app autonome pour les prochains lancements.
+                    runShizuku("pm grant ${context.packageName} android.permission.DUMP")
+                    runShizuku("dumpsys battery")
+                }
+                else -> null
             }
-            else -> null
         }
 
         // Sources autonomes, aucune permission requise.
-        val sticky: Intent? = context.registerReceiver(
-            null,
-            IntentFilter(Intent.ACTION_BATTERY_CHANGED),
-        )
-        val bm = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-
-        val level = parseInt(dump, "level") ?: sticky?.let {
-            val lvl = it.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-            val scale = it.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
-            if (lvl >= 0 && scale > 0) lvl * 100 / scale else null
+        val sticky: Intent? = safe("sticky") {
+            context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         }
-        val temperatureC = (parseInt(dump, "temperature")
-            ?: sticky?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
-                ?.takeIf { it != Int.MIN_VALUE })?.let { it / 10.0 }
-        val voltageMv = parseInt(dump, "voltage")
-            ?: sticky?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1)?.takeIf { it > 0 }
+        val bm = safe("batteryManager") {
+            context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+        }
+
+        val level = safe("level") {
+            parseInt(dump, "level") ?: sticky?.let {
+                val lvl = it.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                val scale = it.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
+                if (lvl >= 0 && scale > 0) lvl * 100 / scale else null
+            }
+        }
+        val temperatureC = safe("temperature") {
+            (parseInt(dump, "temperature")
+                ?: sticky?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+                    ?.takeIf { it != Int.MIN_VALUE })?.let { it / 10.0 }
+        }
+        val voltageMv = safe("voltage") {
+            parseInt(dump, "voltage")
+                ?: sticky?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1)?.takeIf { it > 0 }
+        }
 
         // Cycles : valeur officielle Android 14+, sinon dump, sinon sysfs.
-        var cycles: Int? = null
         var cycleApprox = false
-        if (Build.VERSION.SDK_INT >= 34) {
-            cycles = sticky?.getIntExtra(BatteryManager.EXTRA_CYCLE_COUNT, -1)
-                ?.takeIf { it > 0 }
-        }
-        if (cycles == null) {
-            cycles = parseCyclesFromDump(dump)?.also { cycleApprox = true }
-        }
-        if (cycles == null && shizukuOk) {
-            cycles = SYSFS_CYCLE_PATHS.firstNotNullOfOrNull { path ->
-                runShizuku("cat $path")?.trim()?.toIntOrNull()
+        val cycles = safe("cycles") {
+            var c: Int? = null
+            if (Build.VERSION.SDK_INT >= 34) {
+                c = sticky?.getIntExtra(BatteryManager.EXTRA_CYCLE_COUNT, -1)
+                    ?.takeIf { it > 0 }
             }
+            if (c == null) {
+                c = parseCyclesFromDump(dump)?.also { cycleApprox = true }
+            }
+            if (c == null && shizukuOk) {
+                c = SYSFS_CYCLE_PATHS.firstNotNullOfOrNull { path ->
+                    runShizuku("cat $path")?.trim()?.toIntOrNull()
+                }
+            }
+            c
         }
 
         // Capacité mesurée vs capacité d'origine.
-        val chargeCounterUah = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
-            .takeIf { it > 0 }
-        val designMah = readDesignCapacityMah(context)
+        val chargeCounterUah = safe("chargeCounter") {
+            bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)?.takeIf { it > 0 }
+        }
+        val designMah = safe("designCapacity") { readDesignCapacityMah(context) }
         val estimatedFullMah = if (chargeCounterUah != null && level != null && level >= 10) {
             (chargeCounterUah / 1000.0 * 100.0 / level).roundToInt()
         } else {
@@ -129,17 +154,34 @@ object BatteryReader {
         }
 
         // Santé : ASOC exact > API Android > estimation par mesure.
-        var health: Int? = parseInt(dump, "mSavedBatteryAsoc")?.takeIf { it in 1..100 }
+        var health: Int? = safe("asoc") {
+            parseInt(dump, "mSavedBatteryAsoc")?.takeIf { it in 1..100 }
+        }
         var source: HealthSource? = if (health != null) HealthSource.ASOC else null
-        if (health == null && Build.VERSION.SDK_INT >= 34) {
-            health = bm.getIntProperty(PROP_STATE_OF_HEALTH)
-                .takeIf { it in 1..100 }
+        if (health == null) {
+            health = safe("stateOfHealth") {
+                if (Build.VERSION.SDK_INT >= 34) {
+                    bm?.getIntProperty(PROP_STATE_OF_HEALTH)?.takeIf { it in 1..100 }
+                } else {
+                    null
+                }
+            }
             if (health != null) source = HealthSource.ANDROID_API
         }
         if (health == null && estimatedFullMah != null && designMah != null && designMah > 0) {
             health = (estimatedFullMah * 100.0 / designMah).roundToInt().coerceAtMost(100)
                 .takeIf { it in 1..100 }
             if (health != null) source = HealthSource.ESTIMATE
+        }
+
+        val raw = buildString {
+            if (errors.isNotEmpty()) {
+                append("== erreurs ==\n").append(errors).append('\n')
+            }
+            append("== broadcast batterie ==\n")
+            append(safe("stickyDump") { sticky?.extras?.apply { size() }?.toString() } ?: "indisponible")
+            append("\n\n== dumpsys battery ==\n")
+            append(if (dump.isNullOrBlank()) "indisponible (mode précis non débloqué)" else dump.trim())
         }
 
         return BatteryInfo(
@@ -152,7 +194,7 @@ object BatteryReader {
             voltageMv = voltageMv,
             estimatedFullMah = estimatedFullMah,
             designMah = designMah,
-            raw = dump?.trim() ?: "",
+            raw = raw,
         )
     }
 
