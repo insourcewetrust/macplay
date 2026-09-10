@@ -1,13 +1,24 @@
 # Battery Health (Samsung)
 
-Petite app Android qui automatise la méthode du guide
+Petite app Android, entièrement autonome, qui automatise la méthode du guide
 [r/GalaxyS23](https://www.reddit.com/r/GalaxyS23/comments/1k8ue99/extensive_guidecheck_your_battery_health_and/) :
-au lieu de lancer un dumpstate avec `*#9900#` et de fouiller le fichier à la
-main, l'app lit directement `dumpsys battery` et affiche :
+elle affiche la santé réelle de la batterie sans adb, sans Shizuku et sans root.
 
-- **Capacité restante** (`mSavedBatteryAsoc`), le vrai % de santé de la batterie
-- **Cycles de charge** (`mSavedBatteryUsage` / 100, ou sysfs si dispo)
-- Niveau actuel, température, tension
+Elle combine trois sources, de la plus précise à la plus générale :
+
+1. **Valeur exacte du contrôleur Samsung** (`mSavedBatteryAsoc` dans
+   `dumpsys battery`, la donnée du guide Reddit), si le mode précis
+   optionnel a été débloqué.
+2. **API officielles Android 14+** : nombre de cycles de charge
+   (`EXTRA_CYCLE_COUNT`) et état de santé
+   (`BATTERY_PROPERTY_STATE_OF_HEALTH`), accessibles à toute app sans
+   permission. Un S23 sous One UI 6 est couvert.
+3. **Estimation par mesure** : la charge restante rapportée au niveau
+   affiché donne la capacité réelle, comparée à la capacité d'origine
+   déclarée par le constructeur (PowerProfile).
+
+Affiché : capacité restante en % avec sa provenance, cycles de charge,
+capacité mesurée vs capacité d'origine, niveau, température, tension.
 
 ## Installation
 
@@ -23,33 +34,16 @@ téléphone (il faut autoriser les sources inconnues).
 Ouvre le dossier `samsung-battery-health/` dans Android Studio et lance
 l'app sur ton téléphone (`Run`), ou `./gradlew assembleDebug`.
 
-## Première configuration (une seule fois)
+## Mode précis (optionnel)
 
-Les données de santé sont protégées par la permission `DUMP`, réservée au
-shell. Deux façons de la débloquer :
+L'app marche toute seule dès l'installation. Si tu veux en plus la valeur
+exacte du contrôleur Samsung, deux façons de la débloquer une seule fois :
 
-### Avec adb (recommandé, définitif)
-
-1. Sur le téléphone : Paramètres → À propos → Informations logiciel →
-   tape 7 fois sur "Numéro de version" pour activer les options développeur,
-   puis active le **Débogage USB**.
-2. Branche le téléphone à un PC avec [adb](https://developer.android.com/tools/releases/platform-tools)
-   et lance :
-
-   ```
-   adb shell pm grant com.arnaud.batteryhealth android.permission.DUMP
-   ```
-
-   (l'app a un bouton pour copier cette commande)
-
-C'est tout : la permission survit aux redémarrages, l'app est autonome à vie.
-
-### Avec Shizuku
-
-Si tu utilises déjà [Shizuku](https://shizuku.rikka.app/), autorise
-simplement l'app quand elle le demande. Bonus : l'app en profite pour
-s'accorder la permission `DUMP` elle-même, donc Shizuku n'est plus
-nécessaire ensuite.
+- **adb** : `adb shell pm grant com.arnaud.batteryhealth android.permission.DUMP`
+  (bouton pour copier la commande dans l'app, définitif même après redémarrage)
+- **[Shizuku](https://shizuku.rikka.app/)** : autorise l'app quand elle le
+  demande. Elle en profite pour s'accorder la permission DUMP elle-même,
+  donc Shizuku n'est plus nécessaire ensuite.
 
 ## Interprétation
 
@@ -60,6 +54,10 @@ nécessaire ensuite.
 | 70 à 79 % | Moyenne, à surveiller |
 | < 70 % | Faible, remplacement à envisager |
 
-Note : `mSavedBatteryAsoc` est une estimation du contrôleur de charge
-Samsung. Elle est fiable sur les One UI récents, mais certains modèles ou
-firmwares ne l'exposent pas (l'app affiche alors "Donnée non exposée").
+Notes :
+
+- L'estimation par mesure est plus fiable quand la batterie est bien
+  chargée (au-delà de 80 %) : à bas niveau, la mesure du compteur de
+  charge est bruitée.
+- Certains firmwares n'implémentent pas `BATTERY_PROPERTY_STATE_OF_HEALTH` ;
+  l'app bascule alors automatiquement sur l'estimation.

@@ -56,32 +56,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun bind(info: BatteryInfo?) {
+    private fun bind(info: BatteryInfo) {
         val setupCard = findViewById<MaterialCardView>(R.id.setupCard)
         val healthValue = findViewById<TextView>(R.id.healthValue)
         val healthLabel = findViewById<TextView>(R.id.healthLabel)
+        val healthSource = findViewById<TextView>(R.id.healthSource)
         val cyclesValue = findViewById<TextView>(R.id.cyclesValue)
+        val capacityValue = findViewById<TextView>(R.id.capacityValue)
         val levelValue = findViewById<TextView>(R.id.levelValue)
         val tempValue = findViewById<TextView>(R.id.tempValue)
         val voltValue = findViewById<TextView>(R.id.voltValue)
         val rawText = findViewById<TextView>(R.id.rawText)
         val shizukuButton = findViewById<MaterialButton>(R.id.shizukuButton)
-
-        if (info == null) {
-            setupCard.visibility = View.VISIBLE
-            shizukuButton.visibility =
-                if (BatteryReader.shizukuAvailable()) View.VISIBLE else View.GONE
-            healthValue.text = getString(R.string.value_unknown)
-            healthLabel.text = getString(R.string.setup_needed)
-            cyclesValue.text = getString(R.string.value_unknown)
-            levelValue.text = getString(R.string.value_unknown)
-            tempValue.text = getString(R.string.value_unknown)
-            voltValue.text = getString(R.string.value_unknown)
-            rawText.text = ""
-            return
-        }
-
-        setupCard.visibility = View.GONE
 
         val health = info.healthPercent
         if (health != null) {
@@ -94,13 +80,32 @@ class MainActivity : AppCompatActivity() {
                     else -> R.string.health_weak
                 }
             )
+            healthSource.text = getString(
+                when (info.healthSource) {
+                    HealthSource.ASOC -> R.string.source_asoc
+                    HealthSource.ANDROID_API -> R.string.source_android
+                    else -> R.string.source_estimate
+                }
+            )
+            healthSource.visibility = View.VISIBLE
         } else {
             healthValue.text = getString(R.string.value_unknown)
-            healthLabel.text = getString(R.string.health_not_exposed)
+            healthLabel.text = getString(R.string.health_not_available)
+            healthSource.visibility = View.GONE
         }
 
-        cyclesValue.text = info.cycleCount?.let { getString(R.string.cycles_format, it) }
-            ?: getString(R.string.value_unknown)
+        cyclesValue.text = when {
+            info.cycleCount == null -> getString(R.string.value_unknown)
+            info.cycleApprox -> getString(R.string.cycles_approx_format, info.cycleCount)
+            else -> info.cycleCount.toString()
+        }
+        capacityValue.text = when {
+            info.estimatedFullMah != null && info.designMah != null ->
+                getString(R.string.capacity_format, info.estimatedFullMah, info.designMah)
+            info.estimatedFullMah != null ->
+                getString(R.string.capacity_short_format, info.estimatedFullMah)
+            else -> getString(R.string.value_unknown)
+        }
         levelValue.text = info.level?.let { getString(R.string.percent_format, it) }
             ?: getString(R.string.value_unknown)
         tempValue.text = info.temperatureC?.let { getString(R.string.temp_format, it) }
@@ -108,6 +113,13 @@ class MainActivity : AppCompatActivity() {
         voltValue.text = info.voltageMv?.let { getString(R.string.volt_format, it / 1000.0) }
             ?: getString(R.string.value_unknown)
         rawText.text = info.raw
+
+        // Le mode précis n'est proposé que si la valeur exacte du contrôleur
+        // Samsung n'est pas encore accessible.
+        val precise = info.healthSource == HealthSource.ASOC
+        setupCard.visibility = if (precise) View.GONE else View.VISIBLE
+        shizukuButton.visibility =
+            if (!precise && BatteryReader.shizukuAvailable()) View.VISIBLE else View.GONE
     }
 
     private fun copyAdbCommand() {

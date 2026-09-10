@@ -2,31 +2,45 @@ package com.arnaud.batteryhealth
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.BatteryManager
+import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import androidx.core.content.ContextCompat
 import rikka.shizuku.Shizuku
+import kotlin.math.roundToInt
+
+enum class HealthSource { ASOC, ANDROID_API, ESTIMATE }
 
 data class BatteryInfo(
     val healthPercent: Int?,
+    val healthSource: HealthSource?,
     val cycleCount: Int?,
+    val cycleApprox: Boolean,
     val level: Int?,
     val temperatureC: Double?,
     val voltageMv: Int?,
+    val estimatedFullMah: Int?,
+    val designMah: Int?,
     val raw: String,
 )
 
 /**
- * Lit la santé batterie des Samsung en automatisant la méthode du guide
- * r/GalaxyS23 : `dumpsys battery` expose `mSavedBatteryAsoc` (capacité
- * restante en %) et `mSavedBatteryUsage` (valeur / 100 = cycles de charge).
+ * Lit la santé batterie des Samsung, en full autonome, en combinant :
  *
- * Deux sources possibles, dans cet ordre :
- *  1. Dump direct du service "battery" si la permission DUMP est accordée
- *     (une seule commande adb, persiste après redémarrage).
- *  2. Shell Shizuku si l'app Shizuku tourne et a donné son accord. Dans ce
- *     cas on en profite pour s'auto-accorder DUMP : l'app devient autonome.
+ *  1. Android 14+ expose officiellement aux apps normales le nombre de
+ *     cycles (EXTRA_CYCLE_COUNT) et un indicateur de santé
+ *     (BATTERY_PROPERTY_STATE_OF_HEALTH), sans aucune permission.
+ *  2. Estimation par mesure : charge restante (BATTERY_PROPERTY_CHARGE_COUNTER)
+ *     rapportée au niveau affiché donne la capacité réelle, comparée à la
+ *     capacité d'origine (PowerProfile).
+ *  3. Mode précis optionnel : `dumpsys battery` expose `mSavedBatteryAsoc`
+ *     (la valeur exacte du contrôleur Samsung, méthode du guide r/GalaxyS23)
+ *     si la permission DUMP a été accordée (une commande adb, une fois)
+ *     ou via Shizuku, qui en profite pour auto-accorder DUMP.
  */
 object BatteryReader {
 
@@ -52,9 +66,10 @@ object BatteryReader {
         false
     }
 
-    fun read(context: Context): BatteryInfo? {
+    fun read(context: Context): BatteryInfo {
         val shizukuOk = shizukuAvailable() && shizukuGranted()
 
+        // Mode précis, seulement si déjà débloqué.
         val dump: String? = when {
             hasDumpPermission(context) -> dumpService("battery")
             shizukuOk -> {
@@ -64,33 +79,104 @@ object BatteryReader {
             }
             else -> null
         }
-        if (dump.isNullOrBlank()) return null
 
-        var cycles = parseCycles(dump)
+        // Sources autonomes, aucune permission requise.
+        val sticky: Intent? = context.registerReceiver(
+            null,
+            IntentFilter(Intent.ACTION_BATTERY_CHANGED),
+        )
+        val bm = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+
+        val level = parseInt(dump, "level") ?: sticky?.let {
+            val lvl = it.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale = it.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
+            if (lvl >= 0 && scale > 0) lvl * 100 / scale else null
+        }
+        val temperatureC = (parseInt(dump, "temperature")
+            ?: sticky?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+                ?.takeIf { it != Int.MIN_VALUE })?.let { it / 10.0 }
+        val voltageMv = parseInt(dump, "voltage")
+            ?: sticky?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1)?.takeIf { it > 0 }
+
+        // Cycles : valeur officielle Android 14+, sinon dump, sinon sysfs.
+        var cycles: Int? = null
+        var cycleApprox = false
+        if (Build.VERSION.SDK_INT >= 34) {
+            cycles = sticky?.getIntExtra(BatteryManager.EXTRA_CYCLE_COUNT, -1)
+                ?.takeIf { it > 0 }
+        }
+        if (cycles == null) {
+            cycles = parseCyclesFromDump(dump)?.also { cycleApprox = true }
+        }
         if (cycles == null && shizukuOk) {
             cycles = SYSFS_CYCLE_PATHS.firstNotNullOfOrNull { path ->
                 runShizuku("cat $path")?.trim()?.toIntOrNull()
             }
         }
 
+        // Capacité mesurée vs capacité d'origine.
+        val chargeCounterUah = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+            .takeIf { it > 0 }
+        val designMah = readDesignCapacityMah(context)
+        val estimatedFullMah = if (chargeCounterUah != null && level != null && level >= 10) {
+            (chargeCounterUah / 1000.0 * 100.0 / level).roundToInt()
+        } else {
+            null
+        }
+
+        // Santé : ASOC exact > API Android > estimation par mesure.
+        var health: Int? = parseInt(dump, "mSavedBatteryAsoc")?.takeIf { it in 1..100 }
+        var source: HealthSource? = if (health != null) HealthSource.ASOC else null
+        if (health == null && Build.VERSION.SDK_INT >= 34) {
+            health = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATE_OF_HEALTH)
+                .takeIf { it in 1..100 }
+            if (health != null) source = HealthSource.ANDROID_API
+        }
+        if (health == null && estimatedFullMah != null && designMah != null && designMah > 0) {
+            health = (estimatedFullMah * 100.0 / designMah).roundToInt().coerceAtMost(100)
+                .takeIf { it in 1..100 }
+            if (health != null) source = HealthSource.ESTIMATE
+        }
+
         return BatteryInfo(
-            healthPercent = parseInt(dump, "mSavedBatteryAsoc"),
+            healthPercent = health,
+            healthSource = source,
             cycleCount = cycles,
-            level = parseInt(dump, "level"),
-            temperatureC = parseInt(dump, "temperature")?.let { it / 10.0 },
-            voltageMv = parseInt(dump, "voltage"),
-            raw = dump.trim(),
+            cycleApprox = cycleApprox,
+            level = level,
+            temperatureC = temperatureC,
+            voltageMv = voltageMv,
+            estimatedFullMah = estimatedFullMah,
+            designMah = designMah,
+            raw = dump?.trim() ?: "",
         )
     }
 
-    private fun parseInt(dump: String, key: String): Int? =
-        Regex("""\b$key[=:]\s*(-?\d+)""").find(dump)?.groupValues?.get(1)?.toIntOrNull()
+    private fun parseInt(dump: String?, key: String): Int? {
+        if (dump.isNullOrBlank()) return null
+        return Regex("""\b$key[=:]\s*(-?\d+)""")
+            .find(dump)?.groupValues?.get(1)?.toIntOrNull()
+    }
 
-    private fun parseCycles(dump: String): Int? {
+    private fun parseCyclesFromDump(dump: String?): Int? {
         parseInt(dump, "mSavedBatteryCycle")?.let { return it }
         // mSavedBatteryUsage : les premiers chiffres (valeur / 100) = cycles.
         parseInt(dump, "mSavedBatteryUsage")?.let { return it / 100 }
         return null
+    }
+
+    /** Capacité d'origine (mAh) déclarée par le constructeur dans PowerProfile. */
+    @SuppressLint("PrivateApi")
+    private fun readDesignCapacityMah(context: Context): Int? = try {
+        val profile = Class.forName("com.android.internal.os.PowerProfile")
+            .getConstructor(Context::class.java)
+            .newInstance(context)
+        val capacity = profile.javaClass
+            .getMethod("getBatteryCapacity")
+            .invoke(profile) as Double
+        capacity.roundToInt().takeIf { it > 100 }
+    } catch (t: Throwable) {
+        null
     }
 
     /** Dump du service système via IBinder.dump(), nécessite android.permission.DUMP. */
