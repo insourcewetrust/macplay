@@ -74,6 +74,21 @@ object BatteryReader {
             parseInt(dump, key)?.takeIf { it in 1..100 }
         }
 
+    private const val UEVENT_PATH = "/sys/class/power_supply/battery/uevent"
+
+    /** Cherche une clé POWER_SUPPLY_*needle*=valeur dans un uevent sysfs. */
+    private fun parseUeventInt(text: String?, needle: String): Int? {
+        if (text.isNullOrBlank()) return null
+        return Regex("(?im)^POWER_SUPPLY_\\w*${needle}\\w*=(-?\\d+)\\s*$")
+            .find(text)?.groupValues?.get(1)?.toIntOrNull()
+    }
+
+    private fun readFileQuiet(path: String): String? = try {
+        java.io.File(path).readText()
+    } catch (_: Throwable) {
+        null
+    }
+
     /**
      * Appelée pendant le déblocage, avec un shell adb sous la main : capture
      * les valeurs que seul le shell peut lire (asoc, cycles, y compris via
@@ -82,17 +97,27 @@ object BatteryReader {
     fun cacheShellReadings(context: Context, runCmd: (String) -> String?) {
         try {
             val dump = runCmd("dumpsys battery")
+            val uevent = runCmd("cat $UEVENT_PATH")
+            val ls = runCmd("ls /sys/class/power_supply/battery/")
+
             val asoc = parseAsoc(dump)
+                ?: parseUeventInt(uevent, "asoc")?.takeIf { it in 1..100 }
                 ?: SYSFS_ASOC_PATHS.firstNotNullOfOrNull {
-                    runCmd("cat $it")?.trim()?.toIntOrNull()
+                    runCmd("cat $it")?.trim()?.toIntOrNull()?.takeIf { v -> v in 1..100 }
                 }
             val cycle = parseCyclesFromDump(dump)
+                ?: parseUeventInt(uevent, "cycle")?.takeIf { it >= 0 }
                 ?: SYSFS_CYCLE_PATHS.firstNotNullOfOrNull {
                     runCmd("cat $it")?.trim()?.toIntOrNull()
                 }
+
             val editor = context.getSharedPreferences(SHELL_PREFS, Context.MODE_PRIVATE).edit()
-            asoc?.takeIf { it in 1..100 }?.let { editor.putInt("asoc", it) }
-            cycle?.takeIf { it >= 0 }?.let { editor.putInt("cycle", it) }
+            asoc?.let { editor.putInt("asoc", it) }
+            cycle?.let { editor.putInt("cycle", it) }
+            // Diagnostic complet, visible dans "données brutes".
+            editor.putString("shell_dump", (dump ?: "vide").take(4000))
+            editor.putString("shell_uevent", (uevent ?: "vide").take(2000))
+            editor.putString("shell_ls", (ls ?: "vide").take(2000))
             editor.putLong("ts", System.currentTimeMillis())
             editor.apply()
         } catch (_: Throwable) {
@@ -176,6 +201,9 @@ object BatteryReader {
 
         val prefs = context.getSharedPreferences(SHELL_PREFS, Context.MODE_PRIVATE)
 
+        // Lecture directe du uevent du contrôleur, parfois autorisée aux apps.
+        val uevent = safe("uevent") { java.io.File(UEVENT_PATH).readText() }
+
         // Cycles : valeur officielle Android 14+, sinon dump, sinon cache du
         // déblocage, sinon sysfs via Shizuku.
         var cycleApprox = false
@@ -187,6 +215,12 @@ object BatteryReader {
             }
             if (c == null) {
                 c = parseCyclesFromDump(dump)?.also { cycleApprox = true }
+            }
+            if (c == null) {
+                c = parseUeventInt(uevent, "cycle")?.takeIf { it >= 0 }
+                    ?: SYSFS_CYCLE_PATHS.firstNotNullOfOrNull {
+                        readFileQuiet(it)?.trim()?.toIntOrNull()
+                    }
             }
             if (c == null) {
                 c = prefs.getInt("cycle", -1).takeIf { it >= 0 }
@@ -223,6 +257,14 @@ object BatteryReader {
         // déblocage > API Android officielle.
         var health: Int? = safe("asoc") { parseAsoc(dump) }
         if (health == null) {
+            health = safe("asocSysfs") {
+                parseUeventInt(uevent, "asoc")?.takeIf { it in 1..100 }
+                    ?: SYSFS_ASOC_PATHS.firstNotNullOfOrNull {
+                        readFileQuiet(it)?.trim()?.toIntOrNull()?.takeIf { v -> v in 1..100 }
+                    }
+            }
+        }
+        if (health == null) {
             health = prefs.getInt("asoc", -1).takeIf { it in 1..100 }
         }
         var source: HealthSource? = if (health != null) HealthSource.ASOC else null
@@ -251,6 +293,19 @@ object BatteryReader {
             append(safe("stickyDump") { sticky?.extras?.apply { size() }?.toString() } ?: "indisponible")
             append("\n\n== dumpsys battery ==\n")
             append(if (dump.isNullOrBlank()) "indisponible (mode précis non débloqué)" else dump.trim())
+            append("\n\n== uevent (lecture directe) ==\n")
+            append(uevent?.trim()?.take(1500) ?: "illisible")
+            append("\n\n== capture au déblocage ==\n")
+            val shellLs = prefs.getString("shell_ls", null)
+            val shellUevent = prefs.getString("shell_uevent", null)
+            val shellDump = prefs.getString("shell_dump", null)
+            if (shellLs == null && shellUevent == null && shellDump == null) {
+                append("aucune (refais le déblocage ou la reconnexion)")
+            } else {
+                append("-- ls sysfs --\n").append(shellLs ?: "vide")
+                append("\n-- uevent --\n").append(shellUevent ?: "vide")
+                append("\n-- dumpsys --\n").append(shellDump ?: "vide")
+            }
         }
 
         return BatteryInfo(
