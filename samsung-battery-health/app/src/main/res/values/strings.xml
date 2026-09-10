@@ -22,7 +22,10 @@
     <string name="health_not_available">Donnée non disponible sur ce téléphone</string>
     <string name="source_asoc">Valeur exacte du contrôleur Samsung</string>
     <string name="source_android">Valeur officielle Android</string>
-    <string name="source_estimate">Estimation par mesure, recharge le téléphone au-delà de 80 %% pour plus de précision</string>
+    <string name="source_estimate" formatted="false">Estimation par mesure, recharge le téléphone au-delà de 80 % pour plus de précision</string>
+    <string name="crash_title">L\'app a planté au dernier lancement</string>
+    <string name="crash_copy">Copier l\'erreur</string>
+    <string name="crash_close">Fermer</string>
     <string name="setup_title">Valeur exacte du contrôleur Samsung</string>
     <string name="setup_body">Débloque en 2 minutes la mesure exacte faite par le contrôleur de charge Samsung. Tout se passe sur le téléphone : tu autorises l\'app avec un code affiché par Android, une seule fois, et c\'est définitif.</string>
     <string name="unlock_auto">Débloquer (2 min, sans PC)</string>

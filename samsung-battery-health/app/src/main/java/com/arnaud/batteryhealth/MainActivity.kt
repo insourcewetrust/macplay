@@ -19,23 +19,78 @@ class MainActivity : AppCompatActivity() {
         const val SHIZUKU_REQUEST_CODE = 42
     }
 
+    private var fatalMode = false
+
     private val shizukuListener =
         Shizuku.OnRequestPermissionResultListener { _, _ -> refresh() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-
-        findViewById<MaterialButton>(R.id.refreshButton).setOnClickListener { refresh() }
-        findViewById<MaterialButton>(R.id.unlockButton).setOnClickListener {
-            startActivity(Intent(this, PairingActivity::class.java))
-        }
-        findViewById<MaterialButton>(R.id.copyAdbButton).setOnClickListener { copyAdbCommand() }
-        findViewById<MaterialButton>(R.id.shizukuButton).setOnClickListener { askShizuku() }
-        findViewById<TextView>(R.id.rawToggle).setOnClickListener { toggleRaw() }
-
         try {
-            Shizuku.addRequestPermissionResultListener(shizukuListener)
+            setContentView(R.layout.activity_main)
+
+            findViewById<MaterialButton>(R.id.refreshButton).setOnClickListener { refresh() }
+            findViewById<MaterialButton>(R.id.unlockButton).setOnClickListener {
+                startActivity(Intent(this, PairingActivity::class.java))
+            }
+            findViewById<MaterialButton>(R.id.copyAdbButton).setOnClickListener { copyAdbCommand() }
+            findViewById<MaterialButton>(R.id.shizukuButton).setOnClickListener { askShizuku() }
+            findViewById<TextView>(R.id.rawToggle).setOnClickListener { toggleRaw() }
+
+            try {
+                Shizuku.addRequestPermissionResultListener(shizukuListener)
+            } catch (_: Throwable) {
+            }
+
+            showLastCrashIfAny()
+        } catch (t: Throwable) {
+            showFatal(t)
+        }
+    }
+
+    /**
+     * Mode de secours : si l'écran normal ne peut même pas se construire,
+     * on affiche l'erreur en texte brut (et on la copie dans le presse-papier)
+     * au lieu de planter en boucle.
+     */
+    private fun showFatal(t: Throwable) {
+        fatalMode = true
+        val trace = android.util.Log.getStackTraceString(t)
+        try {
+            val text = TextView(this)
+            text.text = trace
+            text.setTextIsSelectable(true)
+            text.setPadding(48, 48, 48, 48)
+            val scroll = android.widget.ScrollView(this)
+            scroll.addView(text)
+            setContentView(scroll)
+        } catch (_: Throwable) {
+        }
+        try {
+            val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("crash", trace))
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun showLastCrashIfAny() {
+        try {
+            val crashFile = java.io.File(filesDir, App.CRASH_FILE)
+            if (!crashFile.exists()) return
+            val trace = crashFile.readText()
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle(getString(R.string.crash_title))
+                .setMessage(trace.take(3000))
+                .setPositiveButton(getString(R.string.crash_copy)) { _, _ ->
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("crash", trace))
+                    Toast.makeText(this, getString(R.string.copied), Toast.LENGTH_SHORT).show()
+                    crashFile.delete()
+                }
+                .setNegativeButton(getString(R.string.crash_close)) { _, _ ->
+                    crashFile.delete()
+                }
+                .show()
         } catch (_: Throwable) {
         }
     }
@@ -50,13 +105,27 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        refresh()
+        if (!fatalMode) refresh()
     }
 
     private fun refresh() {
         thread {
-            val info = BatteryReader.read(this)
-            runOnUiThread { bind(info) }
+            val info = try {
+                BatteryReader.read(this)
+            } catch (t: Throwable) {
+                BatteryInfo(
+                    healthPercent = null, healthSource = null, cycleCount = null,
+                    cycleApprox = false, level = null, temperatureC = null,
+                    voltageMv = null, estimatedFullMah = null, designMah = null,
+                    raw = android.util.Log.getStackTraceString(t),
+                )
+            }
+            runOnUiThread {
+                try {
+                    bind(info)
+                } catch (_: Throwable) {
+                }
+            }
         }
     }
 
