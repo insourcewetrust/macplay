@@ -2,6 +2,7 @@ package com.arnaud.batteryhealth
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.TextView
@@ -26,6 +27,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         findViewById<MaterialButton>(R.id.refreshButton).setOnClickListener { refresh() }
+        findViewById<MaterialButton>(R.id.unlockButton).setOnClickListener {
+            startActivity(Intent(this, PairingActivity::class.java))
+        }
         findViewById<MaterialButton>(R.id.copyAdbButton).setOnClickListener { copyAdbCommand() }
         findViewById<MaterialButton>(R.id.shizukuButton).setOnClickListener { askShizuku() }
         findViewById<TextView>(R.id.rawToggle).setOnClickListener { toggleRaw() }

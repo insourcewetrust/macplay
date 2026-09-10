@@ -34,13 +34,22 @@ téléphone (il faut autoriser les sources inconnues).
 Ouvre le dossier `samsung-battery-health/` dans Android Studio et lance
 l'app sur ton téléphone (`Run`), ou `./gradlew assembleDebug`.
 
-## Mode précis (optionnel)
+## Valeur exacte du contrôleur Samsung
 
-L'app marche toute seule dès l'installation. Si tu veux en plus la valeur
-exacte du contrôleur Samsung, deux façons de la débloquer une seule fois :
+L'app marche toute seule dès l'installation. Pour obtenir en plus la
+valeur exacte (`asoc`), l'app embarque son propre déblocage, sans PC ni
+app tierce : bouton **Débloquer**, l'app guide vers "Débogage sans fil"
+dans les options développeur, s'appaire toute seule en local (le code
+d'association à 6 chiffres affiché par Android est la demande
+d'autorisation à l'utilisateur, le port est auto-détecté en mDNS), puis
+s'accorde la permission `DUMP` via un shell adb local ([Kadb](https://github.com/flyfishxu/Kadb)).
+À faire une seule fois : la permission survit aux redémarrages, et le
+débogage sans fil peut être désactivé juste après.
 
-- **adb** : `adb shell pm grant com.arnaud.batteryhealth android.permission.DUMP`
-  (bouton pour copier la commande dans l'app, définitif même après redémarrage)
+Méthodes avancées équivalentes, si tu préfères :
+
+- **adb depuis un PC** : `adb shell pm grant com.arnaud.batteryhealth android.permission.DUMP`
+  (bouton pour copier la commande dans l'app)
 - **[Shizuku](https://shizuku.rikka.app/)** : autorise l'app quand elle le
   demande. Elle en profite pour s'accorder la permission DUMP elle-même,
   donc Shizuku n'est plus nécessaire ensuite.
