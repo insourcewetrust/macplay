@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.arnaud.batteryhealth"
-    compileSdk = 34
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.arnaud.batteryhealth"
