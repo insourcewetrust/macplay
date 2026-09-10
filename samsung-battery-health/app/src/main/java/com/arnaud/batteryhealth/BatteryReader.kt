@@ -135,9 +135,9 @@ object BatteryReader {
             cycle?.let { editor.putInt("cycle", it) }
             firstUse?.let { editor.putString("first_use", it) }
             // Diagnostic complet, visible dans "données brutes".
-            editor.putString("shell_dump", (dump ?: "vide").take(4000))
-            editor.putString("shell_uevent", (uevent ?: "vide").take(2000))
-            editor.putString("shell_ls", (ls ?: "vide").take(2000))
+            editor.putString("shell_dump", (dump ?: "empty").take(4000))
+            editor.putString("shell_uevent", (uevent ?: "empty").take(2000))
+            editor.putString("shell_ls", (ls ?: "empty").take(2000))
             editor.putLong("ts", System.currentTimeMillis())
             editor.apply()
         } catch (_: Throwable) {
@@ -308,7 +308,7 @@ object BatteryReader {
         // Date de la dernière capture shell, seulement si la santé en provient.
         val capturedAt = if (source == HealthSource.ASOC && dump.isNullOrBlank()) {
             prefs.getLong("ts", 0L).takeIf { it > 0 }?.let {
-                java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.FRANCE)
+                java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault())
                     .format(java.util.Date(it))
             }
         } else {
@@ -323,24 +323,24 @@ object BatteryReader {
             append(" cycle_cache=").append(prefs.getInt("cycle", -1))
             append("\n\n")
             if (errors.isNotEmpty()) {
-                append("== erreurs ==\n").append(errors).append('\n')
+                append("== errors ==\n").append(errors).append('\n')
             }
-            append("== broadcast batterie ==\n")
-            append(safe("stickyDump") { sticky?.extras?.apply { size() }?.toString() } ?: "indisponible")
+            append("== battery broadcast ==\n")
+            append(safe("stickyDump") { sticky?.extras?.apply { size() }?.toString() } ?: "unavailable")
             append("\n\n== dumpsys battery ==\n")
-            append(if (dump.isNullOrBlank()) "indisponible (mode précis non débloqué)" else dump.trim())
-            append("\n\n== uevent (lecture directe) ==\n")
-            append(uevent?.trim()?.take(1500) ?: "illisible")
-            append("\n\n== capture au déblocage ==\n")
+            append(if (dump.isNullOrBlank()) "unavailable (precise mode not unlocked)" else dump.trim())
+            append("\n\n== uevent (direct read) ==\n")
+            append(uevent?.trim()?.take(1500) ?: "unreadable")
+            append("\n\n== unlock-time capture ==\n")
             val shellLs = prefs.getString("shell_ls", null)
             val shellUevent = prefs.getString("shell_uevent", null)
             val shellDump = prefs.getString("shell_dump", null)
             if (shellLs == null && shellUevent == null && shellDump == null) {
-                append("aucune (refais le déblocage ou la reconnexion)")
+                append("none (run the unlock or a reconnect)")
             } else {
-                append("-- ls sysfs --\n").append(shellLs ?: "vide")
-                append("\n-- uevent --\n").append(shellUevent ?: "vide")
-                append("\n-- dumpsys --\n").append(shellDump ?: "vide")
+                append("-- ls sysfs --\n").append(shellLs ?: "empty")
+                append("\n-- uevent --\n").append(shellUevent ?: "empty")
+                append("\n-- dumpsys --\n").append(shellDump ?: "empty")
             }
         }
 

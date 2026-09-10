@@ -1,75 +1,70 @@
 # Battery Health (Samsung)
 
-Petite app Android, entièrement autonome, qui automatise la méthode du guide
-[r/GalaxyS23](https://www.reddit.com/r/GalaxyS23/comments/1k8ue99/extensive_guidecheck_your_battery_health_and/) :
-elle affiche la santé réelle de la batterie sans adb, sans Shizuku et sans root.
+A small, fully self-contained Android app that automates the
+[r/GalaxyS23 guide](https://www.reddit.com/r/GalaxyS23/comments/1k8ue99/extensive_guidecheck_your_battery_health_and/):
+it shows the real health of a Samsung battery with no PC, no Shizuku and no root.
 
-Elle combine trois sources, de la plus précise à la plus générale :
+The UI is in English by default and in French on phones set to French
+(per-app language can be changed in Android 13+ app settings).
 
-1. **Valeur exacte du contrôleur Samsung** (`mSavedBatteryAsoc` dans
-   `dumpsys battery`, la donnée du guide Reddit), si le mode précis
-   optionnel a été débloqué.
-2. **API officielles Android 14+** : nombre de cycles de charge
-   (`EXTRA_CYCLE_COUNT`) et état de santé
-   (`BATTERY_PROPERTY_STATE_OF_HEALTH`), accessibles à toute app sans
-   permission. Un S23 sous One UI 6 est couvert.
-3. **Capture au déblocage** : pendant que le shell adb est ouvert, l'app
-   capture asoc et cycles (y compris via sysfs) et les met en cache.
+## What it shows
 
-La santé affichée vient toujours d'une mesure matérielle : l'estimation
-"compteur de charge / niveau" a été retirée car sur Samsung le compteur
-est dérivé du niveau affiché, ce qui donnait toujours ~100 %.
+- **Remaining capacity**: the exact value from the Samsung charge controller
+  (`AsocData` on recent One UI, `mSavedBatteryAsoc` on older ones), with the
+  capture date.
+- **First use date** of the battery.
+- Current level, temperature, voltage, and charge cycles when the phone exposes them.
 
-Affiché : capacité restante en % avec sa provenance, cycles de charge,
-capacité mesurée vs capacité d'origine, niveau, température, tension.
+Only hardware-measured values are ever shown as health. The usual
+"charge counter / level" estimate was removed on purpose: on Samsung the
+charge counter is derived from the displayed level, so it always reads ~100 %.
 
-## Installation
+## How it gets the exact value
 
-### Option A : APK depuis GitHub Actions
+One UI's SELinux policy hides the battery service from app processes, even
+with the `DUMP` permission. The only channel that can read it is the phone's
+own adb shell, so the app embeds an adb client ([Kadb](https://github.com/flyfishxu/Kadb)):
 
-À chaque push, le workflow `build-battery-app` compile un APK de debug.
-Va dans l'onglet **Actions** du repo, ouvre le dernier run, télécharge
-l'artefact `BatteryHealth-debug-apk` et installe le `app-debug.apk` sur le
-téléphone (il faut autoriser les sources inconnues).
+1. Tap **Unlock (2 min, no PC)**.
+2. The app guides you to *Wireless debugging* in developer options and to
+   *Pair device with pairing code*. The 6-digit code Android shows is your
+   authorization; the pairing port is auto-detected over mDNS.
+3. The app pairs, grants itself `DUMP` and `BATTERY_STATS`, and while the
+   shell is open captures `dumpsys battery`, the controller's `uevent` and the
+   battery sysfs listing. The exact value is parsed from that capture.
 
-### Option B : Android Studio
+The pairing key and the captured data are stored in the app's private
+storage, so the value is shown on every launch and updates install over the
+top without redoing anything. Wireless debugging can be turned off afterwards.
+To refresh the exact value later, tap **Refresh the exact value**, turn
+wireless debugging back on and use *Already paired? Reconnect* (no code needed).
 
-Ouvre le dossier `samsung-battery-health/` dans Android Studio et lance
-l'app sur ton téléphone (`Run`), ou `./gradlew assembleDebug`.
+Advanced alternatives: the copied adb command
+(`pm grant … DUMP` and `BATTERY_STATS` from a PC) or [Shizuku](https://shizuku.rikka.app/).
 
-## Valeur exacte du contrôleur Samsung
+## Install
 
-L'app marche toute seule dès l'installation. Pour obtenir en plus la
-valeur exacte (`asoc`), l'app embarque son propre déblocage, sans PC ni
-app tierce : bouton **Débloquer**, l'app guide vers "Débogage sans fil"
-dans les options développeur, s'appaire toute seule en local (le code
-d'association à 6 chiffres affiché par Android est la demande
-d'autorisation à l'utilisateur, le port est auto-détecté en mDNS), puis
-s'accorde la permission `DUMP` via un shell adb local ([Kadb](https://github.com/flyfishxu/Kadb)).
-À faire une seule fois : la permission survit aux redémarrages, et le
-débogage sans fil peut être désactivé juste après.
+### From GitHub Actions
 
-Méthodes avancées équivalentes, si tu préfères :
+Every push runs the `build-battery-app` workflow. Open the latest run in the
+**Actions** tab, download the `BatteryHealth-debug-apk` artifact and install
+`app-debug.apk` (unknown sources must be allowed). The debug signing key is
+committed, so the signature is stable and updates install over the previous
+version.
 
-- **adb depuis un PC** : `adb shell pm grant com.arnaud.batteryhealth android.permission.DUMP`
-  (bouton pour copier la commande dans l'app)
-- **[Shizuku](https://shizuku.rikka.app/)** : autorise l'app quand elle le
-  demande. Elle en profite pour s'accorder la permission DUMP elle-même,
-  donc Shizuku n'est plus nécessaire ensuite.
+### From Android Studio
 
-## Interprétation
+Open `samsung-battery-health/` and run the app, or `./gradlew assembleDebug`.
 
-| Capacité restante | État |
+## Reading the result
+
+| Remaining capacity | Status |
 |---|---|
-| ≥ 90 % | Excellente |
-| 80 à 89 % | Bonne |
-| 70 à 79 % | Moyenne, à surveiller |
-| < 70 % | Faible, remplacement à envisager |
+| ≥ 90 % | Excellent |
+| 80 to 89 % | Good |
+| 70 to 79 % | Average, keep an eye on it |
+| < 70 % | Weak, consider a replacement |
 
-Notes :
-
-- L'estimation par mesure est plus fiable quand la batterie est bien
-  chargée (au-delà de 80 %) : à bas niveau, la mesure du compteur de
-  charge est bruitée.
-- Certains firmwares n'implémentent pas `BATTERY_PROPERTY_STATE_OF_HEALTH` ;
-  l'app bascule alors automatiquement sur l'estimation.
+**Show raw data** lists the permission state, any per-source errors, the
+battery broadcast and the full unlock-time capture; **Copy** puts it all on
+the clipboard.
