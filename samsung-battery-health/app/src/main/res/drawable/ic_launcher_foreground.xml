@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Corps de la batterie -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,34 h28 a4,4 0 0 1 4,4 v40 a4,4 0 0 1 -4,4 h-28 a4,4 0 0 1 -4,-4 v-40 a4,4 0 0 1 4,-4 z" />
+    <!-- Borne + -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M48,28 h12 v6 h-12 z" />
+    <!-- Éclair -->
+    <path
+        android:fillColor="#0B5B3B"
+        android:pathData="M57,40 L46,60 L53,60 L50,74 L62,53 L55,53 Z" />
+</vector>

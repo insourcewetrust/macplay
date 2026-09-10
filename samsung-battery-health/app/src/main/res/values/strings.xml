@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Battery Health</string>
+    <string name="app_title">Santé de la batterie</string>
+    <string name="health_title">Capacité restante</string>
+    <string name="cycles_title">Cycles de charge</string>
+    <string name="level_title">Niveau actuel</string>
+    <string name="temp_title">Température</string>
+    <string name="volt_title">Tension</string>
+    <string name="value_unknown">–</string>
+    <string name="percent_format">%d %%</string>
+    <string name="cycles_format">≈ %d</string>
+    <string name="temp_format">%.1f °C</string>
+    <string name="volt_format">%.2f V</string>
+    <string name="health_excellent">Excellente</string>
+    <string name="health_good">Bonne</string>
+    <string name="health_average">Moyenne, à surveiller</string>
+    <string name="health_weak">Faible, remplacement à envisager</string>
+    <string name="health_not_exposed">Donnée non exposée par ce téléphone</string>
+    <string name="setup_needed">Configuration requise</string>
+    <string name="setup_title">Première configuration</string>
+    <string name="setup_body">L\'app a besoin d\'un accès une seule fois. Deux options :\n\n1. Depuis un PC avec adb, branche le téléphone (débogage USB activé) et lance la commande ci-dessous. C\'est définitif, même après redémarrage.\n\n2. Si tu utilises Shizuku, autorise simplement l\'app.</string>
+    <string name="copy_adb">Copier la commande adb</string>
+    <string name="use_shizuku">Autoriser via Shizuku</string>
+    <string name="refresh">Actualiser</string>
+    <string name="raw_toggle">Afficher les données brutes</string>
+    <string name="copied">Commande copiée</string>
+    <string name="shizuku_too_old">Version de Shizuku trop ancienne</string>
+    <string name="shizuku_unavailable">Shizuku indisponible</string>
+</resources>
