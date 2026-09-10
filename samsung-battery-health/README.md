@@ -13,9 +13,12 @@ Elle combine trois sources, de la plus précise à la plus générale :
    (`EXTRA_CYCLE_COUNT`) et état de santé
    (`BATTERY_PROPERTY_STATE_OF_HEALTH`), accessibles à toute app sans
    permission. Un S23 sous One UI 6 est couvert.
-3. **Estimation par mesure** : la charge restante rapportée au niveau
-   affiché donne la capacité réelle, comparée à la capacité d'origine
-   déclarée par le constructeur (PowerProfile).
+3. **Capture au déblocage** : pendant que le shell adb est ouvert, l'app
+   capture asoc et cycles (y compris via sysfs) et les met en cache.
+
+La santé affichée vient toujours d'une mesure matérielle : l'estimation
+"compteur de charge / niveau" a été retirée car sur Samsung le compteur
+est dérivé du niveau affiché, ce qui donnait toujours ~100 %.
 
 Affiché : capacité restante en % avec sa provenance, cycles de charge,
 capacité mesurée vs capacité d'origine, niveau, température, tension.

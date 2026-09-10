@@ -15,6 +15,18 @@ android {
         versionName = "1.0"
     }
 
+    // Clé de debug fixe committée dans le repo : la signature reste stable
+    // d'un build CI à l'autre, donc les mises à jour s'installent par-dessus
+    // sans désinstaller (et sans perdre les permissions accordées).
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

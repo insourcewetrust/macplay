@@ -54,6 +54,39 @@ object BatteryReader {
         "/sys/class/power_supply/battery/cycle_count",
     )
 
+    private val SYSFS_ASOC_PATHS = listOf(
+        "/sys/class/power_supply/battery/batt_asoc",
+        "/sys/class/power_supply/battery/asoc",
+        "/sys/class/power_supply/battery/fg_asoc",
+    )
+
+    private const val SHELL_PREFS = "shell_data"
+
+    /**
+     * Appelée pendant le déblocage, avec un shell adb sous la main : capture
+     * les valeurs que seul le shell peut lire (asoc, cycles, y compris via
+     * sysfs) et les met en cache local pour les affichages suivants.
+     */
+    fun cacheShellReadings(context: Context, runCmd: (String) -> String?) {
+        try {
+            val dump = runCmd("dumpsys battery")
+            val asoc = parseInt(dump, "mSavedBatteryAsoc")
+                ?: SYSFS_ASOC_PATHS.firstNotNullOfOrNull {
+                    runCmd("cat $it")?.trim()?.toIntOrNull()
+                }
+            val cycle = parseCyclesFromDump(dump)
+                ?: SYSFS_CYCLE_PATHS.firstNotNullOfOrNull {
+                    runCmd("cat $it")?.trim()?.toIntOrNull()
+                }
+            val editor = context.getSharedPreferences(SHELL_PREFS, Context.MODE_PRIVATE).edit()
+            asoc?.takeIf { it in 1..100 }?.let { editor.putInt("asoc", it) }
+            cycle?.takeIf { it >= 0 }?.let { editor.putInt("cycle", it) }
+            editor.putLong("ts", System.currentTimeMillis())
+            editor.apply()
+        } catch (_: Throwable) {
+        }
+    }
+
     fun hasDumpPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, "android.permission.DUMP") ==
             PackageManager.PERMISSION_GRANTED
@@ -124,7 +157,10 @@ object BatteryReader {
                 ?: sticky?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1)?.takeIf { it > 0 }
         }
 
-        // Cycles : valeur officielle Android 14+, sinon dump, sinon sysfs.
+        val prefs = context.getSharedPreferences(SHELL_PREFS, Context.MODE_PRIVATE)
+
+        // Cycles : valeur officielle Android 14+, sinon dump, sinon cache du
+        // déblocage, sinon sysfs via Shizuku.
         var cycleApprox = false
         val cycles = safe("cycles") {
             var c: Int? = null
@@ -135,6 +171,9 @@ object BatteryReader {
             if (c == null) {
                 c = parseCyclesFromDump(dump)?.also { cycleApprox = true }
             }
+            if (c == null) {
+                c = prefs.getInt("cycle", -1).takeIf { it >= 0 }
+            }
             if (c == null && shizukuOk) {
                 c = SYSFS_CYCLE_PATHS.firstNotNullOfOrNull { path ->
                     runShizuku("cat $path")?.trim()?.toIntOrNull()
@@ -143,20 +182,33 @@ object BatteryReader {
             c
         }
 
-        // Capacité mesurée vs capacité d'origine.
+        // Capacité mesurée vs capacité d'origine. Sur Samsung le compteur de
+        // charge est dérivé du niveau affiché (valeur circulaire, toujours
+        // ~100 % de la capacité design) : dans ce cas on la masque plutôt que
+        // d'afficher un chiffre qui ne mesure rien.
         val chargeCounterUah = safe("chargeCounter") {
             bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)?.takeIf { it > 0 }
         }
         val designMah = safe("designCapacity") { readDesignCapacityMah(context) }
-        val estimatedFullMah = if (chargeCounterUah != null && level != null && level >= 10) {
+        var estimatedFullMah = if (chargeCounterUah != null && level != null && level >= 10) {
             (chargeCounterUah / 1000.0 * 100.0 / level).roundToInt()
         } else {
             null
         }
+        if (estimatedFullMah != null && designMah != null &&
+            kotlin.math.abs(estimatedFullMah - designMah) * 100 <= designMah * 3
+        ) {
+            estimatedFullMah = null
+        }
 
-        // Santé : ASOC exact > API Android > estimation par mesure.
+        // Santé : uniquement des valeurs mesurées par le matériel, jamais
+        // d'estimation circulaire. ASOC en direct > ASOC capturé au
+        // déblocage > API Android officielle.
         var health: Int? = safe("asoc") {
             parseInt(dump, "mSavedBatteryAsoc")?.takeIf { it in 1..100 }
+        }
+        if (health == null) {
+            health = prefs.getInt("asoc", -1).takeIf { it in 1..100 }
         }
         var source: HealthSource? = if (health != null) HealthSource.ASOC else null
         if (health == null) {
@@ -168,11 +220,6 @@ object BatteryReader {
                 }
             }
             if (health != null) source = HealthSource.ANDROID_API
-        }
-        if (health == null && estimatedFullMah != null && designMah != null && designMah > 0) {
-            health = (estimatedFullMah * 100.0 / designMah).roundToInt().coerceAtMost(100)
-                .takeIf { it in 1..100 }
-            if (health != null) source = HealthSource.ESTIMATE
         }
 
         val raw = buildString {

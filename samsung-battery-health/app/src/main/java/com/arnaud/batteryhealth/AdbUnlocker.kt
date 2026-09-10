@@ -53,8 +53,18 @@ object AdbUnlocker {
         init(context)
         Kadb.create("127.0.0.1", port, connectTimeout = 10_000, socketTimeout = 10_000)
             .use { kadb ->
-                kadb.shell("pm grant ${context.packageName} android.permission.DUMP")
-                kadb.shell("pm grant ${context.packageName} android.permission.BATTERY_STATS")
+                fun sh(cmd: String): String? = try {
+                    kadb.shell(cmd).allOutput.trim().ifBlank { null }
+                } catch (t: Throwable) {
+                    null
+                }
+
+                sh("pm grant ${context.packageName} android.permission.DUMP")
+                sh("pm grant ${context.packageName} android.permission.BATTERY_STATS")
+
+                // Tant que le shell est ouvert, on capture les valeurs que
+                // seul lui peut lire (asoc et cycles via sysfs notamment).
+                BatteryReader.cacheShellReadings(context, ::sh)
             }
         null
     } catch (t: Throwable) {
