@@ -55,7 +55,9 @@
     <string name="pairing_needs_android11">Le déblocage automatique demande Android 11 ou plus.</string>
     <string name="refresh">Actualiser</string>
     <string name="raw_toggle">Afficher les données brutes</string>
-    <string name="copied">Commande copiée</string>
+    <string name="copy_raw">Copier</string>
+    <string name="first_use_title">Première utilisation</string>
+    <string name="copied">Copié</string>
     <string name="shizuku_too_old">Version de Shizuku trop ancienne</string>
     <string name="shizuku_unavailable">Shizuku indisponible</string>
 </resources>

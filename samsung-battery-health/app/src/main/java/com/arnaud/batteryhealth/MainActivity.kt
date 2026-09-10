@@ -36,6 +36,7 @@ class MainActivity : AppCompatActivity() {
             findViewById<MaterialButton>(R.id.copyAdbButton).setOnClickListener { copyAdbCommand() }
             findViewById<MaterialButton>(R.id.shizukuButton).setOnClickListener { askShizuku() }
             findViewById<TextView>(R.id.rawToggle).setOnClickListener { toggleRaw() }
+            findViewById<MaterialButton>(R.id.copyRawButton).setOnClickListener { copyRaw() }
 
             try {
                 Shizuku.addRequestPermissionResultListener(shizukuListener)
@@ -117,7 +118,7 @@ class MainActivity : AppCompatActivity() {
                     healthPercent = null, healthSource = null, cycleCount = null,
                     cycleApprox = false, level = null, temperatureC = null,
                     voltageMv = null, estimatedFullMah = null, designMah = null,
-                    raw = android.util.Log.getStackTraceString(t),
+                    firstUseDate = null, raw = android.util.Log.getStackTraceString(t),
                 )
             }
             runOnUiThread {
@@ -185,6 +186,16 @@ class MainActivity : AppCompatActivity() {
             ?: getString(R.string.value_unknown)
         voltValue.text = info.voltageMv?.let { getString(R.string.volt_format, it / 1000.0) }
             ?: getString(R.string.value_unknown)
+
+        val firstUseRow = findViewById<View>(R.id.firstUseRow)
+        val firstUseValue = findViewById<TextView>(R.id.firstUseValue)
+        if (info.firstUseDate != null) {
+            firstUseRow.visibility = View.VISIBLE
+            firstUseValue.text = info.firstUseDate
+        } else {
+            firstUseRow.visibility = View.GONE
+        }
+
         rawText.text = info.raw
 
         // Le mode précis n'est proposé que si la valeur exacte du contrôleur
@@ -222,5 +233,12 @@ class MainActivity : AppCompatActivity() {
     private fun toggleRaw() {
         val rawText = findViewById<TextView>(R.id.rawText)
         rawText.visibility = if (rawText.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+    }
+
+    private fun copyRaw() {
+        val raw = findViewById<TextView>(R.id.rawText).text?.toString().orEmpty()
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("battery-raw", raw))
+        Toast.makeText(this, getString(R.string.copied), Toast.LENGTH_SHORT).show()
     }
 }

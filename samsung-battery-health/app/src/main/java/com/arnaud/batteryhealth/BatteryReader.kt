@@ -25,6 +25,7 @@ data class BatteryInfo(
     val voltageMv: Int?,
     val estimatedFullMah: Int?,
     val designMah: Int?,
+    val firstUseDate: String?,
     val raw: String,
 )
 
@@ -69,10 +70,25 @@ object BatteryReader {
         ContextCompat.checkSelfPermission(context, "android.permission.BATTERY_STATS") ==
             PackageManager.PERMISSION_GRANTED
 
-    private fun parseAsoc(dump: String?): Int? =
-        ASOC_KEYS.firstNotNullOfOrNull { key ->
+    private fun parseAsoc(dump: String?): Int? {
+        if (dump.isNullOrBlank()) return null
+        // One UI récent : [SS][BattInfo]AsocData efsValue:83
+        Regex("""AsocData\s+efsValue\s*[:=]\s*(\d+)""")
+            .find(dump)?.groupValues?.get(1)?.toIntOrNull()
+            ?.takeIf { it in 1..100 }?.let { return it }
+        // Anciens One UI et variantes sysfs.
+        return ASOC_KEYS.firstNotNullOfOrNull { key ->
             parseInt(dump, key)?.takeIf { it in 1..100 }
         }
+    }
+
+    /** Date de première utilisation Samsung (FirstUseDateData efsValue:20230214). */
+    private fun parseFirstUse(dump: String?): String? {
+        if (dump.isNullOrBlank()) return null
+        val digits = Regex("""FirstUseDateData\s+efsValue\s*[:=]\s*(\d{8})""")
+            .find(dump)?.groupValues?.get(1) ?: return null
+        return "${digits.substring(6, 8)}/${digits.substring(4, 6)}/${digits.substring(0, 4)}"
+    }
 
     private const val UEVENT_PATH = "/sys/class/power_supply/battery/uevent"
 
@@ -111,9 +127,12 @@ object BatteryReader {
                     runCmd("cat $it")?.trim()?.toIntOrNull()
                 }
 
+            val firstUse = parseFirstUse(dump)
+
             val editor = context.getSharedPreferences(SHELL_PREFS, Context.MODE_PRIVATE).edit()
             asoc?.let { editor.putInt("asoc", it) }
             cycle?.let { editor.putInt("cycle", it) }
+            firstUse?.let { editor.putString("first_use", it) }
             // Diagnostic complet, visible dans "données brutes".
             editor.putString("shell_dump", (dump ?: "vide").take(4000))
             editor.putString("shell_uevent", (uevent ?: "vide").take(2000))
@@ -264,8 +283,11 @@ object BatteryReader {
                     }
             }
         }
+        // Dump capturé pendant le déblocage (seul canal autorisé sur One UI).
+        val cachedDump = prefs.getString("shell_dump", null)
         if (health == null) {
             health = prefs.getInt("asoc", -1).takeIf { it in 1..100 }
+                ?: safe("asocCachedDump") { parseAsoc(cachedDump) }
         }
         var source: HealthSource? = if (health != null) HealthSource.ASOC else null
         if (health == null) {
@@ -278,6 +300,9 @@ object BatteryReader {
             }
             if (health != null) source = HealthSource.ANDROID_API
         }
+
+        val firstUseDate = prefs.getString("first_use", null)
+            ?: safe("firstUse") { parseFirstUse(cachedDump) }
 
         val raw = buildString {
             append("== permissions ==\n")
@@ -318,6 +343,7 @@ object BatteryReader {
             voltageMv = voltageMv,
             estimatedFullMah = estimatedFullMah,
             designMah = designMah,
+            firstUseDate = firstUseDate,
             raw = raw,
         )
     }
