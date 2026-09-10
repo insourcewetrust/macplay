@@ -62,6 +62,18 @@ object BatteryReader {
 
     private const val SHELL_PREFS = "shell_data"
 
+    // Variantes de nommage de l'asoc selon les versions de One UI.
+    private val ASOC_KEYS = listOf("mSavedBatteryAsoc", "mBatteryAsoc", "batt_asoc", "asoc")
+
+    fun hasBatteryStatsPermission(context: Context): Boolean =
+        ContextCompat.checkSelfPermission(context, "android.permission.BATTERY_STATS") ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun parseAsoc(dump: String?): Int? =
+        ASOC_KEYS.firstNotNullOfOrNull { key ->
+            parseInt(dump, key)?.takeIf { it in 1..100 }
+        }
+
     /**
      * Appelée pendant le déblocage, avec un shell adb sous la main : capture
      * les valeurs que seul le shell peut lire (asoc, cycles, y compris via
@@ -70,7 +82,7 @@ object BatteryReader {
     fun cacheShellReadings(context: Context, runCmd: (String) -> String?) {
         try {
             val dump = runCmd("dumpsys battery")
-            val asoc = parseInt(dump, "mSavedBatteryAsoc")
+            val asoc = parseAsoc(dump)
                 ?: SYSFS_ASOC_PATHS.firstNotNullOfOrNull {
                     runCmd("cat $it")?.trim()?.toIntOrNull()
                 }
@@ -117,18 +129,23 @@ object BatteryReader {
         }
 
         val shizukuOk = safe("shizuku") { shizukuAvailable() && shizukuGranted() } ?: false
+        val dumpGranted = hasDumpPermission(context)
 
-        // Mode précis, seulement si déjà débloqué.
-        val dump: String? = safe("dump") {
-            when {
-                hasDumpPermission(context) -> dumpService("battery")
-                shizukuOk -> {
-                    // Rend l'app autonome pour les prochains lancements.
-                    runShizuku("pm grant ${context.packageName} android.permission.DUMP")
-                    runShizuku("pm grant ${context.packageName} android.permission.BATTERY_STATS")
-                    runShizuku("dumpsys battery")
-                }
-                else -> null
+        // Mode précis, seulement si déjà débloqué : d'abord le dump binder
+        // direct, sinon l'exécution du binaire dumpsys, sinon Shizuku.
+        var dump: String? = null
+        if (dumpGranted) {
+            dump = safe("dumpBinder") { dumpService("battery") }
+            if (dump.isNullOrBlank()) {
+                dump = safe("dumpExec") { dumpViaExec() }
+            }
+        }
+        if (dump.isNullOrBlank() && shizukuOk) {
+            dump = safe("dumpShizuku") {
+                // Rend l'app autonome pour les prochains lancements.
+                runShizuku("pm grant ${context.packageName} android.permission.DUMP")
+                runShizuku("pm grant ${context.packageName} android.permission.BATTERY_STATS")
+                runShizuku("dumpsys battery")
             }
         }
 
@@ -204,9 +221,7 @@ object BatteryReader {
         // Santé : uniquement des valeurs mesurées par le matériel, jamais
         // d'estimation circulaire. ASOC en direct > ASOC capturé au
         // déblocage > API Android officielle.
-        var health: Int? = safe("asoc") {
-            parseInt(dump, "mSavedBatteryAsoc")?.takeIf { it in 1..100 }
-        }
+        var health: Int? = safe("asoc") { parseAsoc(dump) }
         if (health == null) {
             health = prefs.getInt("asoc", -1).takeIf { it in 1..100 }
         }
@@ -223,6 +238,12 @@ object BatteryReader {
         }
 
         val raw = buildString {
+            append("== permissions ==\n")
+            append("DUMP=").append(dumpGranted)
+            append(" BATTERY_STATS=").append(hasBatteryStatsPermission(context))
+            append(" asoc_cache=").append(prefs.getInt("asoc", -1))
+            append(" cycle_cache=").append(prefs.getInt("cycle", -1))
+            append("\n\n")
             if (errors.isNotEmpty()) {
                 append("== erreurs ==\n").append(errors).append('\n')
             }
@@ -273,36 +294,55 @@ object BatteryReader {
         null
     }
 
-    /** Dump du service système via IBinder.dump(), nécessite android.permission.DUMP. */
+    /**
+     * Dump du service système via IBinder.dump(), nécessite
+     * android.permission.DUMP. Les échecs remontent à l'appelant pour être
+     * visibles dans le diagnostic.
+     */
     @SuppressLint("PrivateApi")
-    private fun dumpService(name: String): String? = try {
+    private fun dumpService(name: String): String? {
         val serviceManager = Class.forName("android.os.ServiceManager")
         val binder = serviceManager
             .getMethod("getService", String::class.java)
-            .invoke(null, name) as? IBinder
-        if (binder == null) {
-            null
-        } else {
-            val pipe = ParcelFileDescriptor.createPipe()
-            val readSide = pipe[0]
-            val writeSide = pipe[1]
-            Thread {
+            .invoke(null, name) as? IBinder ?: return null
+        val pipe = ParcelFileDescriptor.createPipe()
+        val readSide = pipe[0]
+        val writeSide = pipe[1]
+        var dumpError: Throwable? = null
+        val writer = Thread {
+            try {
+                binder.dump(writeSide.fileDescriptor, arrayOf())
+            } catch (t: Throwable) {
+                dumpError = t
+            } finally {
                 try {
-                    binder.dump(writeSide.fileDescriptor, arrayOf())
+                    writeSide.close()
                 } catch (_: Throwable) {
-                } finally {
-                    try {
-                        writeSide.close()
-                    } catch (_: Throwable) {
-                    }
                 }
-            }.start()
-            ParcelFileDescriptor.AutoCloseInputStream(readSide)
-                .bufferedReader()
-                .readText()
+            }
         }
-    } catch (t: Throwable) {
-        null
+        writer.start()
+        val text = ParcelFileDescriptor.AutoCloseInputStream(readSide)
+            .bufferedReader()
+            .readText()
+        writer.join(5_000)
+        dumpError?.let { throw it }
+        return text
+    }
+
+    /**
+     * Variante : exécute le binaire dumpsys. Le contrôle d'accès se fait sur
+     * l'uid appelant, qui détient DUMP une fois le déblocage effectué.
+     */
+    private fun dumpViaExec(): String? {
+        val process = Runtime.getRuntime().exec(arrayOf("dumpsys", "battery"))
+        val output = process.inputStream.bufferedReader().readText()
+        val error = process.errorStream.bufferedReader().readText()
+        process.waitFor()
+        if (output.isBlank() && error.isNotBlank()) {
+            throw IllegalStateException(error.take(500))
+        }
+        return output.ifBlank { null }
     }
 
     /** Exécute une commande shell avec les droits shell de Shizuku. */

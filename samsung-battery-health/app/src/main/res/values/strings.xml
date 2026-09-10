@@ -21,7 +21,7 @@
     <string name="health_weak">Faible, remplacement à envisager</string>
     <string name="health_not_available">Donnée non disponible sur ce téléphone</string>
     <string name="source_asoc">Valeur exacte du contrôleur Samsung</string>
-    <string name="source_android">Valeur officielle Android</string>
+    <string name="source_android">Valeur officielle Android, pas encore l\'asoc exact Samsung</string>
     <string name="source_estimate" formatted="false">Estimation par mesure, recharge le téléphone au-delà de 80 % pour plus de précision</string>
     <string name="crash_title">L\'app a planté au dernier lancement</string>
     <string name="crash_copy">Copier l\'erreur</string>
