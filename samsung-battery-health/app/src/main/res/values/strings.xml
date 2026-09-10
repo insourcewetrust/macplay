@@ -91,10 +91,11 @@
     <string name="sys_health_unknown">Unknown</string>
     <string name="wear_title">Wear projection</string>
     <string name="wear_no_data">Unlock the exact value to start the curve</string>
-    <string name="wear_summary">At the current pace you lose about %1$.1f %% per year (%2$.2f %% per month).</string>
-    <string name="wear_dates">80 %% expected around %1$s, 70 %% around %2$s.</string>
-    <string name="wear_date_80_only">80 %% expected around %1$s.</string>
+    <string name="wear_summary">Losing about %1$.1f %% per year right now, accelerating to about %2$.1f %% per year within a year.</string>
+    <string name="wear_dates">80 %% expected around %1$s, 70 %% around %2$s, 60 %% around %3$s.</string>
     <string name="wear_flat">No measurable decline yet. Each new capture adds a point and sharpens the curve.</string>
-    <string name="wear_hint">Solid line: measured points (100 %% at first use, then each capture). Dashed line: linear trend. Refresh the exact value from time to time to add points.</string>
+    <string name="wear_hint">Solid line: measured points (100 %% at first use, then each capture). Dashed line: accelerating wear model, since a smaller battery needs more charge cycles per day and each cycle wears it a little more as it ages. Refresh the exact value from time to time to add points and sharpen the curve.</string>
+    <string name="wear_model_fitted">Acceleration calibrated on your measurements.</string>
+    <string name="wear_model_default">Acceleration set to a typical value until 3 measurements exist.</string>
     <string name="never">beyond the chart</string>
 </resources>

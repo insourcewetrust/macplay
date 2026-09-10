@@ -268,21 +268,28 @@ class MainActivity : AppCompatActivity() {
             summary.text = getString(R.string.wear_no_data)
             return
         }
-        if (projection.slopePerDay >= 0) {
+        if (!projection.declining) {
             summary.text = getString(R.string.wear_flat)
             return
         }
+        val now = System.currentTimeMillis()
+        val oneYear = 365L * 86_400_000L
         val fmt = java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.ENGLISH)
-        val text = StringBuilder(
-            getString(R.string.wear_summary, projection.yearlyLoss, projection.monthlyLoss)
+        fun date(level: Double): String =
+            projection.dateAt(level, now)?.let { fmt.format(java.util.Date(it)) }
+                ?: getString(R.string.never)
+        val text = StringBuilder()
+        text.append(
+            getString(
+                R.string.wear_summary,
+                projection.yearlyRateAt(now),
+                projection.yearlyRateAt(now + oneYear),
+            )
         )
-        val d80 = projection.dateAt80?.let { fmt.format(java.util.Date(it)) }
-        val d70 = projection.dateAt70?.let { fmt.format(java.util.Date(it)) }
-        when {
-            d80 != null && d70 != null -> text.append(' ').append(getString(R.string.wear_dates, d80, d70))
-            d80 != null -> text.append(' ').append(getString(R.string.wear_date_80_only, d80))
-            d70 != null -> text.append(' ').append(getString(R.string.wear_dates, getString(R.string.never), d70))
-        }
+        text.append(' ').append(getString(R.string.wear_dates, date(80.0), date(70.0), date(60.0)))
+        text.append(' ').append(
+            getString(if (projection.fittedP) R.string.wear_model_fitted else R.string.wear_model_default)
+        )
         summary.text = text
     }
 

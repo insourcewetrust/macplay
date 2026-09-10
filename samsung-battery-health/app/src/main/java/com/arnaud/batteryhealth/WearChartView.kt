@@ -117,7 +117,7 @@ class WearChartView @JvmOverloads constructor(
         val sixYears = 6L * 365 * 86_400_000L
         val xStart = p.t0
         var xEnd = now + threeYears
-        p.dateAt70?.let { xEnd = maxOf(xEnd, it + 180L * 86_400_000L) }
+        p.dateAt(70.0, now)?.let { xEnd = maxOf(xEnd, it + 180L * 86_400_000L) }
         xEnd = minOf(xEnd, now + sixYears)
         fun xPx(t: Long): Float =
             plotLeft + ((t - xStart).toFloat() / (xEnd - xStart).toFloat()) * (plotRight - plotLeft)
@@ -155,7 +155,7 @@ class WearChartView @JvmOverloads constructor(
         val proj = Path()
         proj.moveTo(xPx(lastT), yPx(p.valueAt(lastT)))
         var t = lastT
-        val step = (xEnd - lastT) / 40
+        val step = (xEnd - lastT) / 120
         if (step > 0) {
             while (t < xEnd) {
                 t += step
@@ -177,7 +177,7 @@ class WearChartView @JvmOverloads constructor(
 
         // Annotation des seuils atteints, en texte.
         textPaint.textAlign = Paint.Align.LEFT
-        listOf(80.0 to p.dateAt80, 70.0 to p.dateAt70).forEach { (level, date) ->
+        listOf(80.0 to p.dateAt(80.0, now), 70.0 to p.dateAt(70.0, now)).forEach { (level, date) ->
             if (date != null && date < xEnd) {
                 val x = xPx(date)
                 val y = yPx(level)
