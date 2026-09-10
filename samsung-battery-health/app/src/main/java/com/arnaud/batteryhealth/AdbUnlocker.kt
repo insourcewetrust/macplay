@@ -54,6 +54,7 @@ object AdbUnlocker {
         Kadb.create("127.0.0.1", port, connectTimeout = 10_000, socketTimeout = 10_000)
             .use { kadb ->
                 kadb.shell("pm grant ${context.packageName} android.permission.DUMP")
+                kadb.shell("pm grant ${context.packageName} android.permission.BATTERY_STATS")
             }
         null
     } catch (t: Throwable) {

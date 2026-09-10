@@ -117,6 +117,13 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
                     android:text="@string/pairing_do_pair" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/reconnectButton"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pairing_reconnect" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

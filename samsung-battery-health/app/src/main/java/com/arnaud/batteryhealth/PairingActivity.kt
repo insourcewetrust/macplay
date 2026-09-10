@@ -40,6 +40,9 @@ class PairingActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.pairButton).setOnClickListener {
             startPairing()
         }
+        findViewById<MaterialButton>(R.id.reconnectButton).setOnClickListener {
+            startReconnect()
+        }
 
         pairingFinder = AdbUnlocker.PortFinder(this, AdbUnlocker.SERVICE_PAIRING) { port ->
             detectedPairingPort.set(port)
@@ -117,32 +120,45 @@ class PairingActivity : AppCompatActivity() {
                 showResult(getString(R.string.pairing_failed, pairError.message ?: "?"))
                 return@thread
             }
+            connectAndGrant()
+        }
+    }
 
-            runOnUiThread { statusText.text = getString(R.string.pairing_connecting) }
+    /** Si l'appareil est déjà associé, se reconnecte et ré-accorde les permissions. */
+    private fun startReconnect() {
+        findViewById<MaterialButton>(R.id.pairButton).isEnabled = false
+        findViewById<TextView>(R.id.statusText).text = getString(R.string.pairing_connecting)
+        thread {
+            connectAndGrant()
+        }
+    }
 
-            // Le port de connexion est différent du port d'appairage :
-            // on le découvre en mDNS.
-            val connectPort = waitForConnectPort()
-            if (connectPort == null) {
-                showResult(getString(R.string.pairing_no_connect_port))
-                return@thread
+    private fun connectAndGrant() {
+        val statusText = findViewById<TextView>(R.id.statusText)
+        runOnUiThread { statusText.text = getString(R.string.pairing_connecting) }
+
+        // Le port de connexion est différent du port d'appairage :
+        // on le découvre en mDNS.
+        val connectPort = waitForConnectPort()
+        if (connectPort == null) {
+            showResult(getString(R.string.pairing_no_connect_port))
+            return
+        }
+
+        val grantError = AdbUnlocker.grantDump(this, connectPort)
+        if (grantError != null) {
+            showResult(getString(R.string.pairing_failed, grantError.message ?: "?"))
+            return
+        }
+
+        if (BatteryReader.hasDumpPermission(this)) {
+            runOnUiThread {
+                Toast.makeText(this, getString(R.string.pairing_success), Toast.LENGTH_LONG)
+                    .show()
+                finish()
             }
-
-            val grantError = AdbUnlocker.grantDump(this, connectPort)
-            if (grantError != null) {
-                showResult(getString(R.string.pairing_failed, grantError.message ?: "?"))
-                return@thread
-            }
-
-            if (BatteryReader.hasDumpPermission(this)) {
-                runOnUiThread {
-                    Toast.makeText(this, getString(R.string.pairing_success), Toast.LENGTH_LONG)
-                        .show()
-                    finish()
-                }
-            } else {
-                showResult(getString(R.string.pairing_grant_not_effective))
-            }
+        } else {
+            showResult(getString(R.string.pairing_grant_not_effective))
         }
     }
 

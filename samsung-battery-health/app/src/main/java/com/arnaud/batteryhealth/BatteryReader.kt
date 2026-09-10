@@ -92,6 +92,7 @@ object BatteryReader {
                 shizukuOk -> {
                     // Rend l'app autonome pour les prochains lancements.
                     runShizuku("pm grant ${context.packageName} android.permission.DUMP")
+                    runShizuku("pm grant ${context.packageName} android.permission.BATTERY_STATS")
                     runShizuku("dumpsys battery")
                 }
                 else -> null

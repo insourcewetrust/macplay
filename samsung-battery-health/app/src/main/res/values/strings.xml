@@ -43,6 +43,7 @@
     <string name="pairing_code_hint">Code à 6 chiffres</string>
     <string name="pairing_port_hint">Port (auto-détecté)</string>
     <string name="pairing_do_pair">Associer et débloquer</string>
+    <string name="pairing_reconnect">Déjà associé ? Reconnecter et re-débloquer</string>
     <string name="pairing_port_detected">Fenêtre d\'association détectée (port %d), saisis le code.</string>
     <string name="pairing_missing_input">Il manque le code, ou le port n\'est pas encore détecté : ouvre la fenêtre d\'association dans les options développeur.</string>
     <string name="pairing_in_progress">Association en cours…</string>

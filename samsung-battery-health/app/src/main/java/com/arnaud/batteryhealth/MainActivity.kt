@@ -196,7 +196,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun copyAdbCommand() {
-        val cmd = "adb shell pm grant $packageName android.permission.DUMP"
+        val cmd = "adb shell \"pm grant $packageName android.permission.DUMP; " +
+            "pm grant $packageName android.permission.BATTERY_STATS\""
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("adb", cmd))
         Toast.makeText(this, getString(R.string.copied), Toast.LENGTH_SHORT).show()
