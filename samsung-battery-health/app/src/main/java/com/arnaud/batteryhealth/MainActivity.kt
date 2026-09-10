@@ -37,6 +37,9 @@ class MainActivity : AppCompatActivity() {
             findViewById<MaterialButton>(R.id.shizukuButton).setOnClickListener { askShizuku() }
             findViewById<TextView>(R.id.rawToggle).setOnClickListener { toggleRaw() }
             findViewById<MaterialButton>(R.id.copyRawButton).setOnClickListener { copyRaw() }
+            findViewById<MaterialButton>(R.id.recaptureButton).setOnClickListener {
+                startActivity(Intent(this, PairingActivity::class.java))
+            }
 
             try {
                 Shizuku.addRequestPermissionResultListener(shizukuListener)
@@ -118,7 +121,8 @@ class MainActivity : AppCompatActivity() {
                     healthPercent = null, healthSource = null, cycleCount = null,
                     cycleApprox = false, level = null, temperatureC = null,
                     voltageMv = null, estimatedFullMah = null, designMah = null,
-                    firstUseDate = null, raw = android.util.Log.getStackTraceString(t),
+                    firstUseDate = null, capturedAt = null,
+                    raw = android.util.Log.getStackTraceString(t),
                 )
             }
             runOnUiThread {
@@ -154,13 +158,13 @@ class MainActivity : AppCompatActivity() {
                     else -> R.string.health_weak
                 }
             )
-            healthSource.text = getString(
-                when (info.healthSource) {
-                    HealthSource.ASOC -> R.string.source_asoc
-                    HealthSource.ANDROID_API -> R.string.source_android
-                    else -> R.string.source_estimate
-                }
-            )
+            healthSource.text = when {
+                info.healthSource == HealthSource.ASOC && info.capturedAt != null ->
+                    getString(R.string.source_asoc_captured, info.capturedAt)
+                info.healthSource == HealthSource.ASOC -> getString(R.string.source_asoc)
+                info.healthSource == HealthSource.ANDROID_API -> getString(R.string.source_android)
+                else -> getString(R.string.source_estimate)
+            }
             healthSource.visibility = View.VISIBLE
         } else {
             healthValue.text = getString(R.string.value_unknown)
@@ -202,6 +206,10 @@ class MainActivity : AppCompatActivity() {
         // Samsung n'est pas encore accessible.
         val precise = info.healthSource == HealthSource.ASOC
         setupCard.visibility = if (precise) View.GONE else View.VISIBLE
+        // Une fois la valeur exacte obtenue, elle vient d'une capture figée :
+        // on laisse un accès discret pour la rafraîchir.
+        findViewById<MaterialButton>(R.id.recaptureButton).visibility =
+            if (precise && info.capturedAt != null) View.VISIBLE else View.GONE
         shizukuButton.visibility =
             if (!precise && BatteryReader.shizukuAvailable()) View.VISIBLE else View.GONE
     }

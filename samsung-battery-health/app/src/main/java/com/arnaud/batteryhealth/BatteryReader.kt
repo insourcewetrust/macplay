@@ -26,6 +26,7 @@ data class BatteryInfo(
     val estimatedFullMah: Int?,
     val designMah: Int?,
     val firstUseDate: String?,
+    val capturedAt: String?,
     val raw: String,
 )
 
@@ -304,6 +305,16 @@ object BatteryReader {
         val firstUseDate = prefs.getString("first_use", null)
             ?: safe("firstUse") { parseFirstUse(cachedDump) }
 
+        // Date de la dernière capture shell, seulement si la santé en provient.
+        val capturedAt = if (source == HealthSource.ASOC && dump.isNullOrBlank()) {
+            prefs.getLong("ts", 0L).takeIf { it > 0 }?.let {
+                java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.FRANCE)
+                    .format(java.util.Date(it))
+            }
+        } else {
+            null
+        }
+
         val raw = buildString {
             append("== permissions ==\n")
             append("DUMP=").append(dumpGranted)
@@ -344,6 +355,7 @@ object BatteryReader {
             estimatedFullMah = estimatedFullMah,
             designMah = designMah,
             firstUseDate = firstUseDate,
+            capturedAt = capturedAt,
             raw = raw,
         )
     }
