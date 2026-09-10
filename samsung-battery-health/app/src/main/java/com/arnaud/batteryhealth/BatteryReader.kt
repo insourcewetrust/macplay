@@ -44,6 +44,10 @@ data class BatteryInfo(
  */
 object BatteryReader {
 
+    // BatteryManager.BATTERY_PROPERTY_STATE_OF_HEALTH : dispo à l'exécution
+    // dès Android 14 mais absent du SDK public 34 (constante du SDK 35).
+    private const val PROP_STATE_OF_HEALTH = 10
+
     private val SYSFS_CYCLE_PATHS = listOf(
         "/sys/class/power_supply/battery/battery_cycle",
         "/sys/class/power_supply/battery/fg_cycle",
@@ -128,7 +132,7 @@ object BatteryReader {
         var health: Int? = parseInt(dump, "mSavedBatteryAsoc")?.takeIf { it in 1..100 }
         var source: HealthSource? = if (health != null) HealthSource.ASOC else null
         if (health == null && Build.VERSION.SDK_INT >= 34) {
-            health = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATE_OF_HEALTH)
+            health = bm.getIntProperty(PROP_STATE_OF_HEALTH)
                 .takeIf { it in 1..100 }
             if (health != null) source = HealthSource.ANDROID_API
         }
