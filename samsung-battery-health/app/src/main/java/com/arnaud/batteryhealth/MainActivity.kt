@@ -38,7 +38,10 @@ class MainActivity : AppCompatActivity() {
             findViewById<TextView>(R.id.rawToggle).setOnClickListener { toggleRaw() }
             findViewById<MaterialButton>(R.id.copyRawButton).setOnClickListener { copyRaw() }
             findViewById<MaterialButton>(R.id.recaptureButton).setOnClickListener {
-                startActivity(Intent(this, PairingActivity::class.java))
+                startActivity(
+                    Intent(this, PairingActivity::class.java)
+                        .putExtra(PairingActivity.EXTRA_RECONNECT, true)
+                )
             }
 
             try {

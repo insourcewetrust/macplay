@@ -49,7 +49,14 @@
     <string name="pairing_port_detected">Pairing dialog detected (port %d), enter the code.</string>
     <string name="pairing_missing_input">The code is missing, or the port is not detected yet: open the pairing dialog in developer options.</string>
     <string name="pairing_in_progress">Pairing…</string>
-    <string name="pairing_connecting">Paired! Connecting to wireless debugging…</string>
+    <string name="pairing_paired_connecting">Paired! Connecting to wireless debugging…</string>
+    <string name="reconnect_connecting">Connecting to wireless debugging…</string>
+    <string name="reconnect_intro">Your phone is already paired. The app just needs wireless debugging to be on for a moment: it reconnects by itself and refreshes the exact value, no code required. You can turn wireless debugging off again afterwards.</string>
+    <string name="reconnect_wifi_off">Wireless debugging is off. Tap Open settings, turn on "Wireless debugging", then come back here: the refresh starts automatically.</string>
+    <string name="reconnect_retry">Retry now</string>
+    <string name="reconnect_port_hint">Connection port (optional, shown under "IP address &amp; port")</string>
+    <string name="reconnect_pair_again">Not working? Pair again with a code</string>
+    <string name="reconnect_success">Exact value refreshed!</string>
     <string name="pairing_no_connect_port">Could not find the connection port. Check that "Wireless debugging" is still on, then try again.</string>
     <string name="pairing_failed">Failed: %s. Check the code and try again (each code works only once, reopen the pairing dialog to get a new one).</string>
     <string name="pairing_grant_not_effective">The command ran but the permission is not active. Try again, or use one of the other methods.</string>

@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -11,15 +12,27 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 /**
- * Assistant de déblocage automatique : appairage local au débogage sans fil
- * puis auto-attribution de la permission DUMP. Aucune autre app ni PC requis.
+ * Deux parcours dans le même écran :
+ *  - déblocage complet (appairage par code, puis attribution des permissions
+ *    et capture) ;
+ *  - rafraîchissement (EXTRA_RECONNECT) : l'appareil est déjà associé, on se
+ *    reconnecte au débogage sans fil dès qu'il est actif et on recapture,
+ *    sans repasser par le code. L'assistant complet reste accessible si la
+ *    clé a été perdue.
  */
 class PairingActivity : AppCompatActivity() {
 
+    companion object {
+        const val EXTRA_RECONNECT = "reconnect"
+    }
+
+    private var reconnectMode = false
+    private val busy = AtomicBoolean(false)
     private var pairingFinder: AdbUnlocker.PortFinder? = null
     private val detectedPairingPort = AtomicInteger(-1)
 
@@ -34,14 +47,30 @@ class PairingActivity : AppCompatActivity() {
             return
         }
 
+        reconnectMode = intent.getBooleanExtra(EXTRA_RECONNECT, false)
+
         findViewById<MaterialButton>(R.id.openSettingsButton).setOnClickListener {
             openDeveloperSettings()
         }
-        findViewById<MaterialButton>(R.id.pairButton).setOnClickListener {
-            startPairing()
+        findViewById<MaterialButton>(R.id.pairButton).setOnClickListener { startPairing() }
+        findViewById<MaterialButton>(R.id.reconnectButton).setOnClickListener { startReconnect() }
+
+        findViewById<MaterialButton>(R.id.reconnectSettingsButton).setOnClickListener {
+            openDeveloperSettings()
         }
-        findViewById<MaterialButton>(R.id.reconnectButton).setOnClickListener {
+        findViewById<MaterialButton>(R.id.reconnectRetryButton).setOnClickListener {
             startReconnect()
+        }
+        findViewById<MaterialButton>(R.id.pairAgainButton).setOnClickListener {
+            showFullAssistant()
+        }
+
+        if (reconnectMode) {
+            findViewById<View>(R.id.reconnectCard).visibility = View.VISIBLE
+            findViewById<View>(R.id.introText).visibility = View.GONE
+            findViewById<View>(R.id.step1Card).visibility = View.GONE
+            findViewById<View>(R.id.step2Card).visibility = View.GONE
+            findViewById<TextView>(R.id.titleText).text = getString(R.string.recapture)
         }
 
         pairingFinder = AdbUnlocker.PortFinder(this, AdbUnlocker.SERVICE_PAIRING) { port ->
@@ -51,8 +80,10 @@ class PairingActivity : AppCompatActivity() {
                 if (portField.text.isNullOrBlank()) {
                     portField.setText(port.toString())
                 }
-                findViewById<TextView>(R.id.statusText).text =
-                    getString(R.string.pairing_port_detected, port)
+                if (!reconnectMode) {
+                    findViewById<TextView>(R.id.statusText).text =
+                        getString(R.string.pairing_port_detected, port)
+                }
             }
         }
     }
@@ -61,11 +92,35 @@ class PairingActivity : AppCompatActivity() {
         super.onResume()
         pairingFinder?.start()
         updateDevOptionsHint()
+        if (reconnectMode && !busy.get()) {
+            if (isWirelessDebuggingOn()) {
+                // Le débogage sans fil est actif : on repart tout seul.
+                startReconnect()
+            } else {
+                setStatus(getString(R.string.reconnect_wifi_off))
+            }
+        }
     }
 
     override fun onPause() {
         pairingFinder?.stop()
         super.onPause()
+    }
+
+    private fun showFullAssistant() {
+        reconnectMode = false
+        findViewById<View>(R.id.reconnectCard).visibility = View.GONE
+        findViewById<View>(R.id.introText).visibility = View.VISIBLE
+        findViewById<View>(R.id.step1Card).visibility = View.VISIBLE
+        findViewById<View>(R.id.step2Card).visibility = View.VISIBLE
+        findViewById<TextView>(R.id.titleText).text = getString(R.string.pairing_title)
+        setStatus("")
+    }
+
+    private fun isWirelessDebuggingOn(): Boolean = try {
+        Settings.Global.getInt(contentResolver, "adb_wifi_enabled", 0) == 1
+    } catch (_: Throwable) {
+        false
     }
 
     private fun updateDevOptionsHint() {
@@ -101,18 +156,18 @@ class PairingActivity : AppCompatActivity() {
     }
 
     private fun startPairing() {
-        val statusText = findViewById<TextView>(R.id.statusText)
         val code = findViewById<TextInputEditText>(R.id.codeField).text?.toString()?.trim()
         val port = findViewById<TextInputEditText>(R.id.portField).text?.toString()?.trim()
             ?.toIntOrNull() ?: detectedPairingPort.get().takeIf { it > 0 }
 
         if (code.isNullOrBlank() || port == null || port <= 0) {
-            statusText.text = getString(R.string.pairing_missing_input)
+            setStatus(getString(R.string.pairing_missing_input))
             return
         }
+        if (!busy.compareAndSet(false, true)) return
 
-        findViewById<MaterialButton>(R.id.pairButton).isEnabled = false
-        statusText.text = getString(R.string.pairing_in_progress)
+        setButtonsEnabled(false)
+        setStatus(getString(R.string.pairing_in_progress))
 
         thread {
             val pairError = AdbUnlocker.pair(this, port, code)
@@ -120,28 +175,32 @@ class PairingActivity : AppCompatActivity() {
                 showResult(getString(R.string.pairing_failed, pairError.message ?: "?"))
                 return@thread
             }
+            runOnUiThread { setStatus(getString(R.string.pairing_paired_connecting)) }
             connectAndGrant()
         }
     }
 
     /** Si l'appareil est déjà associé, se reconnecte et ré-accorde les permissions. */
     private fun startReconnect() {
-        findViewById<MaterialButton>(R.id.pairButton).isEnabled = false
-        findViewById<TextView>(R.id.statusText).text = getString(R.string.pairing_connecting)
-        thread {
-            connectAndGrant()
-        }
+        if (!busy.compareAndSet(false, true)) return
+        setButtonsEnabled(false)
+        setStatus(getString(R.string.reconnect_connecting))
+        thread { connectAndGrant() }
     }
 
     private fun connectAndGrant() {
-        val statusText = findViewById<TextView>(R.id.statusText)
-        runOnUiThread { statusText.text = getString(R.string.pairing_connecting) }
-
-        // Le port de connexion est différent du port d'appairage :
-        // on le découvre en mDNS.
-        val connectPort = waitForConnectPort()
+        // Le port de connexion est différent du port d'appairage : soit saisi
+        // à la main (affiché sous "Adresse IP et port"), soit découvert en mDNS.
+        val manualPort = findViewById<TextInputEditText>(R.id.connectPortField)
+            .text?.toString()?.trim()?.toIntOrNull()?.takeIf { it > 0 }
+        val connectPort = manualPort ?: waitForConnectPort()
         if (connectPort == null) {
-            showResult(getString(R.string.pairing_no_connect_port))
+            showResult(
+                getString(
+                    if (isWirelessDebuggingOn()) R.string.pairing_no_connect_port
+                    else R.string.reconnect_wifi_off
+                )
+            )
             return
         }
 
@@ -153,8 +212,12 @@ class PairingActivity : AppCompatActivity() {
 
         if (BatteryReader.hasDumpPermission(this)) {
             runOnUiThread {
-                Toast.makeText(this, getString(R.string.pairing_success), Toast.LENGTH_LONG)
-                    .show()
+                Toast.makeText(
+                    this,
+                    getString(if (reconnectMode) R.string.reconnect_success else R.string.pairing_success),
+                    Toast.LENGTH_LONG,
+                ).show()
+                busy.set(false)
                 finish()
             }
         } else {
@@ -175,10 +238,22 @@ class PairingActivity : AppCompatActivity() {
         return found.get().takeIf { it > 0 }
     }
 
+    private fun setStatus(message: String) {
+        findViewById<TextView>(R.id.statusText).text = message
+        findViewById<TextView>(R.id.reconnectStatus).text = message
+    }
+
+    private fun setButtonsEnabled(enabled: Boolean) {
+        findViewById<MaterialButton>(R.id.pairButton).isEnabled = enabled
+        findViewById<MaterialButton>(R.id.reconnectButton).isEnabled = enabled
+        findViewById<MaterialButton>(R.id.reconnectRetryButton).isEnabled = enabled
+    }
+
     private fun showResult(message: String) {
         runOnUiThread {
-            findViewById<TextView>(R.id.statusText).text = message
-            findViewById<MaterialButton>(R.id.pairButton).isEnabled = true
+            setStatus(message)
+            setButtonsEnabled(true)
+            busy.set(false)
         }
     }
 }
