@@ -82,14 +82,15 @@ object BatteryReader {
 
     private fun parseAsoc(dump: String?): Int? {
         if (dump.isNullOrBlank()) return null
-        // One UI récent : [SS][BattInfo]AsocData efsValue:83
-        Regex("""AsocData\s+efsValue\s*[:=]\s*(\d+)""")
-            .find(dump)?.groupValues?.get(1)?.toIntOrNull()
-            ?.takeIf { it in 1..100 }?.let { return it }
-        // Anciens One UI et variantes sysfs.
-        return ASOC_KEYS.firstNotNullOfOrNull { key ->
+        // Valeur vivante du service ("mSavedBatteryAsoc: [83]") en priorité.
+        ASOC_KEYS.firstNotNullOfOrNull { key ->
             parseInt(dump, key)?.takeIf { it in 1..100 }
-        }
+        }?.let { return it }
+        // Sinon le journal BattInfo, figé au dernier démarrage :
+        // [SS][BattInfo]AsocData efsValue:83
+        return Regex("""AsocData\s+efsValue\s*[:=]\s*(\d+)""")
+            .find(dump)?.groupValues?.get(1)?.toIntOrNull()
+            ?.takeIf { it in 1..100 }
     }
 
     /** Date de première utilisation Samsung (FirstUseDateData efsValue:20230214). */
@@ -279,6 +280,8 @@ object BatteryReader {
         }
 
         val prefs = context.getSharedPreferences(SHELL_PREFS, Context.MODE_PRIVATE)
+        // Dump capturé pendant le déblocage (seul canal autorisé sur One UI).
+        val cachedDump = prefs.getString("shell_dump", null)
 
         // Lecture directe du uevent du contrôleur, parfois autorisée aux apps.
         val uevent = safe("uevent") { java.io.File(UEVENT_PATH).readText() }
@@ -302,8 +305,11 @@ object BatteryReader {
                     }
             }
             if (c == null) {
-                c = prefs.getInt("cycle", -1).takeIf { it >= 0 }
-                    ?: parseCumulativeCycles(prefs.getString("shell_dump", null))
+                // mSavedBatteryUsage du dump capturé (valeur vivante à la capture),
+                // sinon le cache, sinon le journal BattInfo figé au démarrage.
+                c = parseCyclesFromDump(cachedDump)
+                    ?: prefs.getInt("cycle", -1).takeIf { it >= 0 }
+                    ?: parseCumulativeCycles(cachedDump)
                 if (c != null) cycleApprox = true
             }
             if (c == null && shizukuOk) {
@@ -345,11 +351,9 @@ object BatteryReader {
                     }
             }
         }
-        // Dump capturé pendant le déblocage (seul canal autorisé sur One UI).
-        val cachedDump = prefs.getString("shell_dump", null)
         if (health == null) {
-            health = prefs.getInt("asoc", -1).takeIf { it in 1..100 }
-                ?: safe("asocCachedDump") { parseAsoc(cachedDump) }
+            health = safe("asocCachedDump") { parseAsoc(cachedDump) }
+                ?: prefs.getInt("asoc", -1).takeIf { it in 1..100 }
         }
         var source: HealthSource? = if (health != null) HealthSource.ASOC else null
         if (health == null) {
@@ -450,7 +454,8 @@ object BatteryReader {
 
     private fun parseInt(dump: String?, key: String): Int? {
         if (dump.isNullOrBlank()) return null
-        return Regex("""\b$key[=:]\s*(-?\d+)""")
+        // Samsung écrit souvent la valeur entre crochets : "mSavedBatteryAsoc: [83]".
+        return Regex("""\b$key[=:]\s*\[?\s*(-?\d+)""")
             .find(dump)?.groupValues?.get(1)?.toIntOrNull()
     }
 

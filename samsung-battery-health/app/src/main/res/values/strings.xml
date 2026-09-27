@@ -79,7 +79,7 @@
     <string name="system_health_title">System health flag</string>
     <string name="current_format">%d mA</string>
     <string name="remaining_format">≈ %d mAh</string>
-    <string name="cycles_hint">Cycles come from the controller\'s cumulative discharge counter divided by 100, the method from the guide.</string>
+    <string name="cycles_hint">Cycles come from the controller\'s cumulative discharge counter (mSavedBatteryUsage) divided by 100, the method from the guide.</string>
     <string name="status_charging">Charging</string>
     <string name="status_discharging">Discharging</string>
     <string name="status_full">Full</string>
