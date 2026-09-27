@@ -38,7 +38,7 @@ dalvik-exchange --dex --min-sdk-version=23 --output="$OUT/classes.dex" "$OUT/cla
 echo "› Align + sign"
 zipalign -f -p 4 "$OUT/unsigned.apk" "$OUT/aligned.apk"
 apksigner sign --ks "$KS" --ks-pass "pass:$KS_PASS" --ks-key-alias fuseau \
-  --min-sdk-version 23 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+  --min-sdk-version 23 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled false \
   --out "$ROOT/release/fuseau.apk" "$OUT/aligned.apk"
 apksigner verify "$ROOT/release/fuseau.apk"
 ls -la "$ROOT/release/fuseau.apk"
