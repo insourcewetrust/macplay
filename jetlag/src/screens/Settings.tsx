@@ -8,6 +8,7 @@ export function Settings() {
   const { profile, settings, trips } = useStore();
   const [toast, setToast] = useState<string | null>(null);
   const [showKey, setShowKey] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
   const file = useRef<HTMLInputElement>(null);
 
   const doExport = () => {
@@ -113,14 +114,17 @@ export function Settings() {
           className="btn ghost sm"
           style={{ color: "var(--warn)" }}
           onClick={() => {
-            if (confirm("Effacer tous tes voyages et réglages ?")) {
-              localStorage.clear();
-              location.hash = "/";
-              location.reload();
+            if (!confirmReset) return setConfirmReset(true);
+            try {
+              localStorage.removeItem("fuseau.v1");
+            } catch {
+              /* storage blocked */
             }
+            location.hash = "/";
+            location.reload();
           }}
         >
-          Tout effacer
+          {confirmReset ? "Appuie encore pour tout effacer" : "Tout effacer"}
         </button>
       </div>
 

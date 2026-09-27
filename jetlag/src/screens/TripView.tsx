@@ -18,6 +18,7 @@ export function TripView({ id }: { id: string }) {
   const now = useNow();
   const plan = trip ? planFor(profile, trip) : null;
   const [menu, setMenu] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const todayIdx = plan ? plan.days.findIndex((d) => now >= d.start && now < d.end) : -1;
@@ -58,7 +59,10 @@ export function TripView({ id }: { id: string }) {
           <Icon name="back" />
         </button>
         <div className="grow topbar-title">{cityLabel(plan.dest)}</div>
-        <button className="icon-btn" aria-label="Options" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+        <button className="icon-btn" aria-label="Options" aria-expanded={menu} onClick={() => {
+            setMenu(!menu);
+            setConfirmDel(false);
+          }}>
           <Icon name="more" />
         </button>
         {menu && (
@@ -80,13 +84,12 @@ export function TripView({ id }: { id: string }) {
               role="menuitem"
               className="danger"
               onClick={() => {
-                if (confirm("Supprimer ce voyage et son plan ?")) {
-                  deleteTrip(trip.id);
-                  go("/");
-                }
+                if (!confirmDel) return setConfirmDel(true);
+                deleteTrip(trip.id);
+                go("/");
               }}
             >
-              <Icon name="trash" size={18} /> Supprimer
+              <Icon name="trash" size={18} /> {confirmDel ? "Confirmer la suppression" : "Supprimer"}
             </button>
           </div>
         )}
