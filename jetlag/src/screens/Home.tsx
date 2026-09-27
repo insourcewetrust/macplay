@@ -106,7 +106,10 @@ export function TripCard({ plan, now }: { plan: Plan; now: number }) {
   return (
     <button className="card tap" onClick={() => go(`/trip/${plan.trip.id}`)} style={isPast ? { opacity: 0.7 } : undefined}>
       <div className="row between small muted">
-        <span>{dayShort(plan.departure, plan.homeTz)}</span>
+        <span>
+          {dayShort(plan.departure, plan.homeTz)}
+          {plan.back ? ` → ${dayShort(plan.back.departure, plan.destTz)}` : ""}
+        </span>
         <span>{isPast ? "Terminé" : relDays(plan.departure, now)}</span>
       </div>
       <div className="route" style={{ marginTop: 10 }}>
@@ -131,7 +134,8 @@ export function TripCard({ plan, now }: { plan: Plan; now: number }) {
           </span>
         )}
         {plan.strategy === "stay" && <span className="pill ghost">Séjour court</span>}
-        {(plan.strategy === "advance" || plan.strategy === "delay") && <span className="pill ghost">~{Math.max(1, plan.adaptDays)} j d'adaptation</span>}
+        {(plan.strategy === "advance" || plan.strategy === "delay") && !plan.back && <span className="pill ghost">~{Math.max(1, plan.adaptDays)} j d'adaptation</span>}
+        {plan.back && <span className="pill ghost">Aller-retour · {plan.stayNights} nuit{plan.stayNights > 1 ? "s" : ""}</span>}
         {legs > 1 && <span className="pill ghost">{legs - 1} escale{legs > 2 ? "s" : ""}</span>}
         {!isPast && plan.trip.preDays > 0 && prepStart && prepStart.start > now && (
           <span className="pill ghost">Prépa dès {dayShort(prepStart.start, plan.homeTz)}</span>

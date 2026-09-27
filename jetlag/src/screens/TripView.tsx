@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { cityLabel } from "../lib/airports";
 import type { Plan, PlanDay, PlanEvent } from "../lib/engine";
 import { dayLong, dayShort, hmShort, signed } from "../lib/format";
+import { fmtDur } from "../lib/engine";
 import { exportCalendar } from "../lib/ics";
 import { deleteTrip, useStore } from "../lib/store";
 import { planFor, useNow } from "../lib/usePlan";
@@ -50,7 +51,7 @@ export function TripView({ id }: { id: string }) {
 
   const day = plan.days[Math.min(sel, plan.days.length - 1)];
   const active = now >= plan.start && now <= plan.end;
-  const overall = plan.targetH ? Math.min(1, Math.abs(plan.bodyOffsetAt(now)) / Math.abs(plan.targetH)) : 1;
+  const overall = plan.alignmentAt(now);
 
   return (
     <div className="screen">
@@ -97,9 +98,9 @@ export function TripView({ id }: { id: string }) {
       <div className="card hero">
         <div className="row between small muted">
           <span>
-            {dayShort(plan.departure, plan.homeTz)} → {dayShort(plan.arrival, plan.destTz)}
+            {dayShort(plan.departure, plan.homeTz)} → {plan.back ? dayShort(plan.back.arrival, plan.homeTz) : dayShort(plan.arrival, plan.destTz)}
           </span>
-          <span className="tnum">{trip.legs.map((l) => l.flightNumber).filter(Boolean).join(" · ")}</span>
+          <span className="tnum">{[...trip.legs, ...(trip.returnLegs ?? [])].map((l) => l.flightNumber).filter(Boolean).join(" · ")}</span>
         </div>
         <div className="route" style={{ marginTop: 12 }}>
           <div>
@@ -119,20 +120,21 @@ export function TripView({ id }: { id: string }) {
             {signed(plan.shiftH)}
           </div>
           <div className="small">
-            <b>{strategyTitle(plan)}</b>
+            <b>{strategyTitle(plan.out)}</b>
             <div className="muted">{strategyLine(plan)}</div>
-            {(plan.strategy === "advance" || plan.strategy === "delay") && (
+            {(plan.strategy === "advance" || plan.strategy === "delay" || plan.back?.strategy === "advance" || plan.back?.strategy === "delay") && (
               <>
                 <div className="adapt-bar" aria-label={`Horloge alignée à ${Math.round(overall * 100)} %`}>
                   <span style={{ width: `${Math.max(3, overall * 100)}%` }} />
                 </div>
                 <div className="xsmall faint" style={{ marginTop: 4 }}>
-                  {active || now > plan.end ? `Horloge alignée à ${Math.round(overall * 100)} %` : "Ton horloge interne, jour après jour"}
+                  {active || now > plan.end ? `Horloge alignée à ${Math.round(overall * 100)} % sur l'heure locale` : "Ton horloge interne, jour après jour"}
                 </div>
               </>
             )}
           </div>
         </div>
+        {plan.back && <BackSummary plan={plan} />}
       </div>
 
       {active && (
@@ -146,7 +148,7 @@ export function TripView({ id }: { id: string }) {
         {plan.days.map((d, i) => (
           <button key={d.key} className="day-chip" aria-pressed={i === sel} onClick={() => setSel(i)}>
             <span className="l">{d.label}</span>
-            <span className="d">{d.phase === "travel" ? dayShort(plan.departure, plan.homeTz).replace(/\.$/, "") : shortDate(d)}</span>
+            <span className="d">{shortDate(d)}</span>
             <ProgressDot value={d.progress} today={i === todayIdx} />
           </button>
         ))}
@@ -186,31 +188,52 @@ function ProgressDot({ value, today }: { value: number; today: boolean }) {
   );
 }
 
-function strategyTitle(p: Plan) {
+function BackSummary({ plan }: { plan: Plan }) {
+  const b = plan.back!;
+  const moving = b.strategy === "advance" || b.strategy === "delay";
+  return (
+    <div className="row" style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)", gap: 14, alignItems: "flex-start" }}>
+      <div className="pill ghost" style={{ flexShrink: 0 }}>
+        <Icon name="landing" size={14} /> Retour
+      </div>
+      <div className="small">
+        <b>{moving ? strategyTitle(b) + " pour revenir à l'heure de " + cityLabel(plan.home) : "Rien à rattraper au retour"}</b>
+        <div className="muted">
+          {plan.alignedAtReturn !== undefined && plan.alignedAtReturn < 0.95
+            ? `Séjour de ${plan.stayNights} nuit${plan.stayNights > 1 ? "s" : ""} : tu seras adapté(e) à ~${Math.round(plan.alignedAtReturn * 100)} % au départ du retour, donc moins à rattraper. `
+            : ""}
+          {moving ? `~${b.adaptDays} jour${b.adaptDays > 1 ? "s" : ""} pour te recaler une fois rentré(e).` : plan.strategy === "stay" ? "Ton corps est resté à l'heure de chez toi." : ""}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function strategyTitle(p: { strategy: Plan["strategy"]; targetH: number }) {
   switch (p.strategy) {
     case "none":
       return "Pas de décalage à gérer";
     case "stay":
       return "Séjour court : on ne bouge pas ton horloge";
     case "advance":
-      return `Avancer ton horloge de ${signed(p.targetH).replace("+", "")}`;
+      return `Avancer ton horloge de ${fmtDur(Math.round(Math.abs(p.targetH) * 60))}`;
     case "delay":
-      return `Reculer ton horloge de ${signed(-p.targetH).replace("+", "")}`;
+      return `Reculer ton horloge de ${fmtDur(Math.round(Math.abs(p.targetH) * 60))}`;
   }
 }
 
 function strategyLine(p: Plan) {
   if (p.strategy === "none") return "On s'occupe surtout de ton vol et de ta forme.";
-  if (p.strategy === "stay") return `Garde l'heure de ${cityLabel(p.home)} autant que possible.`;
+  if (p.strategy === "stay") return `Séjour court : garde l'heure de ${cityLabel(p.home)} autant que possible, avec des horaires de compromis sur place.`;
   const days = Math.max(1, p.adaptDays);
+  if (p.back && p.alignedAtReturn !== undefined && p.alignedAtReturn < 0.95) return `Adaptation partielle pendant le séjour (il faudrait ~${days} jours pour l'être à 100 %).`;
   return `~${days} jour${days > 1 ? "s" : ""} avec le plan, ~${p.adaptDaysNoPlan} sans.`;
 }
 
 function DayPanel({ plan, day, now }: { plan: Plan; day: PlanDay; now: number }) {
   const [legend, setLegend] = useState(false);
-  const travel = day.phase === "travel";
   const events = day.events;
-  const place = day.tz === plan.destTz ? plan.dest : plan.home;
+  const city = (tz: string) => cityLabel(tz === plan.homeTz ? plan.home : plan.dest);
   return (
     <section aria-label={day.label}>
       <div className="day-head">
@@ -219,7 +242,15 @@ function DayPanel({ plan, day, now }: { plan: Plan; day: PlanDay; now: number })
             {dayLong(day.start, day.tz)}
           </div>
         </div>
-        <span className="xsmall faint">{travel ? `heures de ${cityLabel(plan.home)} puis ${cityLabel(plan.dest)}` : `heure de ${cityLabel(place)}`}</span>
+        <span className="xsmall faint" style={{ textAlign: "right" }}>
+          heure de {city(day.tz)}
+          {day.altTz && (
+            <>
+              <br />
+              {city(day.altTz)} en petit
+            </>
+          )}
+        </span>
       </div>
       <p className="focus">{day.focus}</p>
       <button className="row xsmall muted" style={{ marginTop: 10, gap: 4 }} onClick={() => setLegend(!legend)} aria-expanded={legend}>
@@ -230,20 +261,22 @@ function DayPanel({ plan, day, now }: { plan: Plan; day: PlanDay; now: number })
       <div className="timeline">
         {events.length === 0 && <p className="muted small">Rien de particulier ce jour-là.</p>}
         {events.map((e) => (
-          <EventRow key={e.id} e={e} plan={plan} now={now} travel={travel} />
+          <EventRow key={e.id} e={e} plan={plan} day={day} now={now} />
         ))}
       </div>
     </section>
   );
 }
 
-function EventRow({ e, plan, now, travel }: { e: PlanEvent; plan: Plan; now: number; travel: boolean }) {
+function EventRow({ e, plan, day, now }: { e: PlanEvent; plan: Plan; day: PlanDay; now: number }) {
   const meta = KIND_META[e.kind];
   const [open, setOpen] = useState(false);
   const past = (e.end ?? e.start + 30 * MIN) < now;
   const current = e.end ? e.start <= now && now < e.end : false;
   const hasMore = !!e.bullets?.length;
-  const otherTz = e.tz === plan.destTz ? plan.homeTz : plan.destTz;
+  const tz = day.tz;
+  const alt = day.altTz;
+  const altCode = alt === plan.homeTz ? plan.home.iata : plan.dest.iata;
   const dur = e.end ? e.end - e.start : 0;
   return (
     <button
@@ -253,13 +286,13 @@ function EventRow({ e, plan, now, travel }: { e: PlanEvent; plan: Plan; now: num
       style={{ cursor: hasMore ? "pointer" : "default" }}
     >
       <div className="time">
-        {hmShort(e.start, e.tz)}
-        {travel && plan.homeTz !== plan.destTz ? (
+        {hmShort(e.start, tz)}
+        {alt ? (
           <small title="Même instant, autre fuseau">
-            {hmShort(e.start, otherTz)} {otherTz === plan.homeTz ? plan.home.iata : plan.dest.iata}
+            {hmShort(e.start, alt)} {altCode}
           </small>
         ) : (
-          e.end && dur >= 30 * MIN && <small>{hmShort(e.end, e.tz)}</small>
+          e.end && dur >= 30 * MIN && <small>{hmShort(e.end, tz)}</small>
         )}
       </div>
       <div className={`ico tone-${meta.tone}`}>
@@ -270,7 +303,7 @@ function EventRow({ e, plan, now, travel }: { e: PlanEvent; plan: Plan; now: num
           {e.title}
           {e.optional && <span className="opt">optionnel</span>}
         </div>
-        {travel && e.end && dur >= 30 * MIN && <div className="sub tnum">jusqu'à {hmShort(e.end, e.tz)}</div>}
+        {alt && e.end && dur >= 30 * MIN && <div className="sub tnum">jusqu'à {hmShort(e.end, tz)}</div>}
         {e.detail && <div className="sub">{e.detail}</div>}
         {hasMore && !open && <div className="sub" style={{ color: "var(--accent)", marginTop: 4 }}>{e.bullets!.length > 1 ? `${e.bullets!.length} conseils` : "Voir le conseil"}</div>}
         {hasMore && open && (

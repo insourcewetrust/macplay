@@ -11,8 +11,10 @@ import { BodyDial, KIND_META } from "../ui/visuals";
 export function NowCard({ plan, now, onClick }: { plan: Plan; now: number; onClick?: () => void }) {
   const { profile } = useStore();
   const info = nowInfo(plan, now);
-  const tz = now < plan.departure - 40 * MIN ? plan.homeTz : plan.destTz;
-  const here = now < plan.departure - 40 * MIN ? plan.home : plan.dest;
+  const tz = plan.tzAt(now);
+  const alt = plan.altTzAt(now);
+  const cityOf = (z: string) => (z === plan.homeTz ? plan.home : plan.dest);
+  const here = cityOf(tz);
   const local = zoned(now, tz);
   const bodyMin = plan.bodyMinutesAt(now);
   const gap = Math.round(((local.minutes - bodyMin + 2160) % 1440) - 720);
@@ -33,8 +35,15 @@ export function NowCard({ plan, now, onClick }: { plan: Plan; now: number; onCli
       <div className="body-clock" style={{ marginTop: 16 }}>
         <BodyDial localMin={local.minutes} bodyMin={bodyMin} bed={hmToMin(profile.bedtime)} wake={hmToMin(profile.wake)} />
         <div className="times">
-          <span className="small muted">Il est</span>
-          <span className="big">{local.hm}</span>
+          <span className="small muted">Il est, à {cityLabel(here)}</span>
+          <span className="big">
+            {local.hm}
+            {alt && (
+              <span className="small muted" style={{ fontWeight: 500, marginLeft: 8 }}>
+                {zoned(now, alt).hm} à {cityLabel(cityOf(alt))}
+              </span>
+            )}
+          </span>
           <span className="small muted">
             {Math.abs(gap) < 20 ? (
               "ton corps est à l'heure"

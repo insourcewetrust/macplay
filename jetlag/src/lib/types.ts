@@ -33,13 +33,14 @@ export interface GroundTransport {
 
 export interface Trip {
   id: string;
-  legs: Leg[];
+  legs: Leg[]; // outbound
+  returnLegs?: Leg[]; // way back, same trip
+  returnPreDays?: number; // 0..3 days easing back to home time before flying home
   toAirport: GroundTransport;
   airportBuffer: number; // minutes at the airport before departure
   fromAirport: GroundTransport;
   preDays: number; // 0..3 days of pre-adjustment at home
-  returnDate?: string; // "YYYY-MM-DD" -> short trip detection
+  returnDate?: string; // "YYYY-MM-DD", used when the return flight isn't known yet
   stayOnHomeTime?: boolean; // user choice for short trips
-  firstCommitment?: string; // "HH:mm" local destination, first morning
   createdAt: number;
 }

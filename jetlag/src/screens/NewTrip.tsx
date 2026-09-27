@@ -5,7 +5,7 @@ import { estimateArrival, lookupFlight, searchRoute, type FoundFlight } from "..
 import { signed } from "../lib/format";
 import { parseBooking } from "../lib/parseBooking";
 import { newId, nowMs, saveTrip, useStore } from "../lib/store";
-import { zoned, MIN } from "../lib/time";
+import { addDaysKey, zoned, MIN } from "../lib/time";
 import type { Cabin, GroundTransport, Leg, TransportMode, Trip } from "../lib/types";
 import { AirportInput, Segmented, Stepper, Switch } from "../ui/controls";
 import { Icon } from "../ui/Icon";
@@ -75,9 +75,32 @@ function defaultTrip(legs: Leg[]): Trip {
 }
 
 function recommendedPreDays(shift: number) {
-  if (shift >= 4 && shift < 10) return 2;
+  if (shift >= 3 && shift < 10) return 2;
   if (Math.abs(shift) >= 6) return 1;
   return 0;
+}
+
+type ReturnMode = "flight" | "date" | "none";
+
+/** Default return leg: the reverse route, a week after arrival. */
+function reverseLeg(legs: Leg[]): Leg {
+  const last = legs[legs.length - 1];
+  const t = last && legTimes(last);
+  const date = t ? addDaysKey(zoned(t.arr, t.to.tz).dateKey, 7) : today();
+  return { ...emptyLeg(date), from: last?.to ?? "", to: legs[0]?.from ?? "" };
+}
+
+function returnError(trip: Trip): string | null {
+  const legs = trip.returnLegs ?? [];
+  if (!legs.length) return "Ajoute ton vol retour, ou choisis « Date seulement ».";
+  for (const l of legs) {
+    const e = legError(l);
+    if (e) return e;
+  }
+  const outArr = legTimes(trip.legs[trip.legs.length - 1]);
+  const backDep = legTimes(legs[0]);
+  if (outArr && backDep && backDep.dep <= outArr.arr) return "Le retour doit partir après ton arrivée.";
+  return null;
 }
 
 export function NewTrip({ editId }: { editId?: string }) {
@@ -85,37 +108,51 @@ export function NewTrip({ editId }: { editId?: string }) {
   const editing = editId ? trips.find((t) => t.id === editId) : undefined;
   const [step, setStep] = useState(editing ? 1 : 0);
   const [trip, setTrip] = useState<Trip>(() => editing ?? defaultTrip([emptyLeg()]));
+  const [retMode, setRetMode] = useState<ReturnMode>(() => (editing ? (editing.returnLegs?.length ? "flight" : editing.returnDate ? "date" : "none") : "flight"));
   const [touchedPre, setTouchedPre] = useState(!!editing);
 
   const setLegs = (legs: Leg[]) => setTrip((t) => ({ ...t, legs }));
+  const setReturnLegs = (legs: Leg[]) => setTrip((t) => ({ ...t, returnLegs: legs }));
   const legsOk = trip.legs.length > 0 && trip.legs.every((l) => !legError(l));
+  const retErr = retMode === "flight" ? returnError(trip) : null;
 
-  const plan = useMemo(() => (legsOk ? buildPlan(profile, trip) : null), [profile, trip, legsOk]);
+  // The trip as it will be saved, depending on the return choice.
+  const effective = useMemo<Trip>(() => {
+    if (retMode === "flight") return { ...trip, returnDate: undefined };
+    if (retMode === "date") return { ...trip, returnLegs: undefined, returnPreDays: undefined };
+    return { ...trip, returnLegs: undefined, returnDate: undefined, returnPreDays: undefined };
+  }, [trip, retMode]);
+  const plan = useMemo(() => (legsOk && !retErr ? buildPlan(profile, effective) : legsOk ? buildPlan(profile, { ...effective, returnLegs: undefined }) : null), [profile, effective, legsOk, retErr]);
 
   const goStep = (s: number) => {
-    if (s === 2 && !editing) {
-      // Sensible door-to-door defaults once we know the route.
-      setTrip((t) => ({ ...t, airportBuffer: editing ? t.airportBuffer : isInternational(t) ? 150 : 90 }));
-    }
-    if (s === 3 && !touchedPre && plan) {
-      setTrip((t) => ({ ...t, preDays: recommendedPreDays(plan.shiftH) }));
+    if (s === 2 && retMode === "flight" && !(trip.returnLegs ?? []).length) setReturnLegs([reverseLeg(trip.legs)]);
+    if (s === 3 && !editing) setTrip((t) => ({ ...t, airportBuffer: isInternational(t) ? 150 : 90 }));
+    if (s === 4 && !touchedPre && plan) {
+      setTrip((t) => ({
+        ...t,
+        preDays: recommendedPreDays(plan.shiftH),
+        returnPreDays: plan.back && plan.stayNights >= 3 && Math.abs(plan.shiftH) >= 4 ? 1 : 0,
+      }));
     }
     setStep(s);
     window.scrollTo({ top: 0 });
   };
 
   const save = () => {
-    saveTrip(trip);
+    saveTrip(effective);
     go(`/trip/${trip.id}`);
   };
 
-  const titles = ["Ton vol", "Vérifie ton itinéraire", "Porte à porte", "Ton séjour"];
+  const titles = ["Ton vol", "Ton aller", "Ton retour", "Porte à porte", "Ton séjour"];
   const subs = [
-    "Le plus simple : ton numéro de vol. Sinon, le trajet ou ta confirmation de réservation.",
+    "Le plus simple : ton numéro de vol. Sinon, le trajet ou ta confirmation de réservation (aller et retour d'un coup).",
     "Heures locales, comme sur ton billet. Ajoute tes correspondances s'il y en a.",
-    "Les trajets et l'attente comptent : c'est là qu'on prend (ou pas) la lumière sans s'en rendre compte.",
-    "Deux dernières questions pour caler ton plan.",
+    "Le retour fait partie du plan : on ne te recale pas à fond sur place si tu repars vite, et on prépare ta réadaptation à la maison.",
+    "Les trajets et l'attente comptent : c'est là qu'on prend (ou pas) la lumière sans s'en rendre compte. Au retour, on inverse ces trajets.",
+    "Dernières questions pour caler ton plan sur ta vraie vie.",
   ];
+  const canContinue = step === 1 ? legsOk : step === 2 ? legsOk && !retErr && (retMode !== "date" || !!trip.returnDate) : legsOk;
+  const hint = step === 1 && !legsOk ? legError(trip.legs.find((l) => legError(l)) ?? trip.legs[0]) : step === 2 ? retErr ?? (retMode === "date" && !trip.returnDate ? "Choisis ta date de retour." : null) : null;
 
   return (
     <div className="screen" key={step}>
@@ -128,7 +165,7 @@ export function NewTrip({ editId }: { editId?: string }) {
           <Icon name={step === 0 || (editing && step === 1) ? "x" : "back"} />
         </button>
         <div className="grow progress-dots">
-          {[0, 1, 2, 3].map((i) => (
+          {[0, 1, 2, 3, 4].map((i) => (
             <span key={i} className={i === step ? "on" : ""} />
           ))}
         </div>
@@ -144,11 +181,9 @@ export function NewTrip({ editId }: { editId?: string }) {
           onLegs={(legs) => {
             const groups = splitTrips(legs);
             if (groups.length > 1) {
-              // Outbound + return pasted together: create every trip, the first one goes through the wizard.
-              const [first, ...rest] = groups;
-              rest.forEach((g) => saveTrip(defaultTrip(g)));
-              const back = groups[1]?.[0];
-              setTrip((t) => ({ ...t, legs: first, returnDate: back ? back.dep.slice(0, 10) : t.returnDate }));
+              // Outbound and return pasted together: one trip with both.
+              setTrip((t) => ({ ...t, legs: groups[0], returnLegs: groups.slice(1).flat() }));
+              setRetMode("flight");
             } else setLegs(legs.length ? legs : [emptyLeg()]);
             goStep(1);
           }}
@@ -157,44 +192,64 @@ export function NewTrip({ editId }: { editId?: string }) {
 
       {step === 1 && (
         <div className="stack">
-          {trip.legs.map((l, i) => (
-            <LegEditor
-              key={l.id}
-              leg={l}
-              index={i}
-              count={trip.legs.length}
-              onChange={(nl) => setLegs(trip.legs.map((x) => (x.id === l.id ? withEstimate(nl) : x)))}
-              onRemove={() => setLegs(trip.legs.filter((x) => x.id !== l.id))}
-            />
-          ))}
-          <button
-            className="btn soft block"
-            onClick={() => {
-              const last = trip.legs[trip.legs.length - 1];
-              const t = last && legTimes(last);
-              const date = t ? zoned(t.arr, t.to.tz).dateKey : today();
-              setLegs([...trip.legs, { ...emptyLeg(date), from: last?.to ?? "" }]);
-            }}
-          >
-            <Icon name="plus" size={18} /> Ajouter une correspondance
-          </button>
+          <LegList legs={trip.legs} onChange={setLegs} />
           {plan && <ShiftPreview plan={plan} />}
         </div>
       )}
 
       {step === 2 && (
-        <div className="stack-lg">
-          <TransportField
-            title={`Pour aller à l'aéroport · ${trip.legs[0].from}`}
-            value={trip.toAirport}
-            onChange={(v) => setTrip({ ...trip, toAirport: v })}
+        <div className="stack">
+          <Segmented<ReturnMode>
+            label="Retour"
+            value={retMode}
+            onChange={(m) => {
+              setRetMode(m);
+              if (m === "flight" && !(trip.returnLegs ?? []).length) setReturnLegs([reverseLeg(trip.legs)]);
+            }}
+            options={[
+              { value: "flight", label: "Vol retour" },
+              { value: "date", label: "Date seulement" },
+              { value: "none", label: "Aller simple" },
+            ]}
           />
+          {retMode === "flight" && (
+            <>
+              <ReturnFinder
+                apiKey={settings.aerodataboxKey}
+                date={(trip.returnLegs?.[0]?.dep ?? "").slice(0, 10) || reverseLeg(trip.legs).dep.slice(0, 10)}
+                onFound={(legs) => setReturnLegs(legs)}
+              />
+              <LegList legs={trip.returnLegs ?? []} onChange={setReturnLegs} />
+            </>
+          )}
+          {retMode === "date" && (
+            <div className="field">
+              <label htmlFor="ret">Date du retour</label>
+              <input
+                id="ret"
+                className="input"
+                type="date"
+                value={trip.returnDate ?? ""}
+                min={plan ? zoned(plan.arrival, plan.destTz).dateKey : undefined}
+                onChange={(e) => setTrip({ ...trip, returnDate: e.target.value || undefined })}
+              />
+              <span className="hint">Sans le vol, on adapte le séjour à sa durée. Ajoute le vol retour plus tard pour avoir le plan du retour.</span>
+            </div>
+          )}
+          {retMode === "none" && <p className="hint">Pas de souci : le plan s'arrête quand tu es adapté(e) sur place.</p>}
+          {plan?.back && <ShiftPreview plan={plan} back />}
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="stack-lg">
+          <TransportField title={`Pour aller à l'aéroport · ${trip.legs[0].from}`} value={trip.toAirport} onChange={(v) => setTrip({ ...trip, toAirport: v })} />
           <div className="field">
             <span className="label">Arrivée à l'aéroport avant le décollage</span>
             <Stepper value={trip.airportBuffer} step={15} min={30} max={300} onChange={(v) => setTrip({ ...trip, airportBuffer: v })} format={fmtDur} />
           </div>
           <TransportField
-            title={`En sortant de l'aéroport · ${trip.legs[trip.legs.length - 1].to}`}
+            title={`Entre l'aéroport ${trip.legs[trip.legs.length - 1].to} et ton logement`}
             value={trip.fromAirport}
             onChange={(v) => setTrip({ ...trip, fromAirport: v })}
           />
@@ -207,28 +262,19 @@ export function NewTrip({ editId }: { editId?: string }) {
         </div>
       )}
 
-      {step === 3 && plan && (
+      {step === 4 && plan && (
         <div className="stack-lg">
           <ShiftPreview plan={plan} />
-          <div className="field">
-            <label htmlFor="ret">Date de retour (optionnel)</label>
-            <input
-              id="ret"
-              className="input"
-              type="date"
-              value={trip.returnDate ?? ""}
-              min={zoned(plan.arrival, plan.destTz).dateKey}
-              onChange={(e) => setTrip({ ...trip, returnDate: e.target.value || undefined })}
-            />
-            <span className="hint">Pour un séjour de 3 nuits ou moins, mieux vaut souvent garder l'heure de chez toi.</span>
-          </div>
 
           {plan.shortTrip && (
             <div className="card flat" style={{ padding: "4px 16px" }}>
               <div className="toggle-row">
                 <div className="text">
                   <div style={{ fontWeight: 600 }}>Rester à l'heure de chez moi</div>
-                  <div className="small muted">Recommandé pour un séjour court avec {signed(plan.shiftH)} de décalage.</div>
+                  <div className="small muted">
+                    Conseillé pour {Number.isFinite(plan.stayNights) ? `${plan.stayNights} nuit${plan.stayNights > 1 ? "s" : ""}` : "un séjour court"} sur place : ton corps n'aurait pas le temps de s'adapter avant de rentrer. On te
+                    donne des horaires de compromis vivables sur place.
+                  </div>
                 </div>
                 <Switch checked={trip.stayOnHomeTime !== false} onChange={(v) => setTrip({ ...trip, stayOnHomeTime: v })} label="Rester à l'heure de chez moi" />
               </div>
@@ -236,45 +282,39 @@ export function NewTrip({ editId }: { editId?: string }) {
           )}
 
           {(plan.strategy === "advance" || plan.strategy === "delay") && (
-            <div className="field">
-              <span className="label">Commencer à s'adapter avant de partir ?</span>
-              <div className="stack">
-                {[0, 1, 2, 3].map((n) => {
-                  const rec = recommendedPreDays(plan.shiftH) === n;
-                  const dir = plan.targetH > 0 ? "plus tôt" : "plus tard";
-                  const desc =
-                    n === 0
-                      ? "Tout commence le jour du départ."
-                      : n === 1
-                        ? `La veille, coucher et lever 1 h ${dir}, avec la lumière au bon moment.`
-                        : `Pendant ${n} jours, coucher et lever 1 h ${dir} chaque jour (${Math.min(n, Math.abs(plan.targetH))} h au total).${n === 3 ? " Le plus efficace dans les études." : ""}`;
-                  return (
-                    <button
-                      key={n}
-                      className="option"
-                      aria-pressed={trip.preDays === n}
-                      onClick={() => {
-                        setTouchedPre(true);
-                        setTrip({ ...trip, preDays: n });
-                      }}
-                    >
-                      <span className="t">{n === 0 ? "Non, je pars comme ça" : `${n} jour${n > 1 ? "s" : ""} avant`}</span>
-                      {rec ? <span className="pill">Conseillé</span> : <span />}
-                      <span className="d">{desc}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <span className="hint">Choisis ce qui colle à ton agenda : mieux vaut un plan simple suivi qu'un plan parfait abandonné.</span>
-            </div>
+            <PreDaysField
+              label="Commencer en douceur avant de partir ?"
+              value={trip.preDays}
+              recommended={recommendedPreDays(plan.shiftH)}
+              advance={plan.targetH > 0}
+              onChange={(n) => {
+                setTouchedPre(true);
+                setTrip({ ...trip, preDays: n });
+              }}
+            />
           )}
+
+          {plan.back && plan.strategy !== "stay" && (plan.back.strategy === "advance" || plan.back.strategy === "delay") && (
+            <PreDaysField
+              label={`Revenir doucement vers l'heure de ${cityLabel(plan.home)} avant le retour ?`}
+              value={trip.returnPreDays ?? 0}
+              recommended={plan.stayNights >= 3 && Math.abs(plan.shiftH) >= 4 ? 1 : 0}
+              advance={plan.back.targetH > 0}
+              max={2}
+              onChange={(n) => {
+                setTouchedPre(true);
+                setTrip({ ...trip, returnPreDays: n });
+              }}
+            />
+          )}
+          <span className="hint">Mieux vaut un plan simple que tu suis qu'un plan parfait abandonné. Les horaires proposés restent vivables : jamais de coucher avant 21 h 30.</span>
         </div>
       )}
 
       {step > 0 && (
         <div className="wizard-foot">
-          {step < 3 ? (
-            <button className="btn block" disabled={!legsOk} onClick={() => goStep(step + 1)}>
+          {step < 4 ? (
+            <button className="btn block" disabled={!canContinue} onClick={() => goStep(step + 1)}>
               Continuer
             </button>
           ) : (
@@ -282,9 +322,9 @@ export function NewTrip({ editId }: { editId?: string }) {
               <Icon name="check" size={18} /> {editing ? "Enregistrer" : "Créer mon plan"}
             </button>
           )}
-          {step === 1 && !legsOk && trip.legs[0] && (
+          {hint && (trip.legs[0]?.from || step === 2) && (
             <p className="hint" style={{ textAlign: "center", marginTop: 10 }}>
-              {legError(trip.legs.find((l) => legError(l))!)}
+              {hint}
             </p>
           )}
         </div>
@@ -293,20 +333,123 @@ export function NewTrip({ editId }: { editId?: string }) {
   );
 }
 
-function ShiftPreview({ plan }: { plan: NonNullable<ReturnType<typeof buildPlan>> }) {
-  const text =
-    plan.strategy === "none"
-      ? "Pas de décalage horaire notable : on s'occupe surtout du vol."
-      : plan.strategy === "stay"
-        ? `Séjour court : tu restes calé(e) sur l'heure de ${cityLabel(plan.home)}.`
-        : `Adapté(e) en ~${Math.max(1, plan.adaptDays)} jour${plan.adaptDays > 1 ? "s" : ""} avec le plan, contre ~${plan.adaptDaysNoPlan} sans.`;
+function PreDaysField({ label, value, recommended, advance, max = 3, onChange }: { label: string; value: number; recommended: number; advance: boolean; max?: number; onChange: (n: number) => void }) {
+  const dir = advance ? "plus tôt" : "plus tard";
+  const light = advance ? "lumière dès le réveil" : "lumière en fin de journée";
+  return (
+    <div className="field">
+      <span className="label">{label}</span>
+      <div className="stack">
+        {Array.from({ length: max + 1 }, (_, n) => n).map((n) => {
+          const desc =
+            n === 0
+              ? "Tout commence le jour du vol."
+              : n === 1
+                ? `La veille : coucher 30 min ${dir}, et ${light}.`
+                : `Coucher 30 min ${dir} chaque soir (${fmtDur(n * 30)} au bout de ${n} jours), et ${light}.`;
+          return (
+            <button key={n} className="option" aria-pressed={value === n} onClick={() => onChange(n)}>
+              <span className="t">{n === 0 ? "Non" : `${n} jour${n > 1 ? "s" : ""} avant`}</span>
+              {recommended === n ? <span className="pill">Conseillé</span> : <span />}
+              <span className="d">{desc}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function LegList({ legs, onChange }: { legs: Leg[]; onChange: (legs: Leg[]) => void }) {
+  return (
+    <>
+      {legs.map((l, i) => (
+        <LegEditor
+          key={l.id}
+          leg={l}
+          index={i}
+          count={legs.length}
+          onChange={(nl) => onChange(legs.map((x) => (x.id === l.id ? withEstimate(nl) : x)))}
+          onRemove={() => onChange(legs.filter((x) => x.id !== l.id))}
+        />
+      ))}
+      <button
+        className="btn soft block"
+        onClick={() => {
+          const last = legs[legs.length - 1];
+          const t = last && legTimes(last);
+          const date = t ? zoned(t.arr, t.to.tz).dateKey : today();
+          onChange([...legs, { ...emptyLeg(date), from: last?.to ?? "" }]);
+        }}
+      >
+        <Icon name="plus" size={18} /> Ajouter une correspondance
+      </button>
+    </>
+  );
+}
+
+function ReturnFinder({ apiKey, date: initialDate, onFound }: { apiKey?: string; date: string; onFound: (legs: Leg[]) => void }) {
+  const [num, setNum] = useState("");
+  const [date, setDate] = useState(initialDate);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const search = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await lookupFlight(num, date, apiKey);
+      onFound(
+        r.slice(0, 1).map((f) =>
+          withEstimate({ ...emptyLeg(date), flightNumber: f.flightNumber, airline: f.airline, from: f.from, to: f.to, dep: f.dep ?? `${date}T`, arr: f.arr ?? "", source: f.arr ? f.source : "estimate" }),
+        ),
+      );
+    } catch (e) {
+      setErr(e instanceof Error && !/fetch|Failed/.test(e.message) ? e.message : "Pas de connexion au service de vols : remplis le vol ci-dessous.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="card flat stack" style={{ padding: 16 }}>
+      <span className="label">Retrouver par numéro de vol</span>
+      <div className="grid-2">
+        <input className="input" placeholder="AF 279" aria-label="Numéro du vol retour" value={num} autoCapitalize="characters" onChange={(e) => setNum(e.target.value)} />
+        <input className="input" type="date" aria-label="Date du vol retour" value={date} onChange={(e) => setDate(e.target.value)} />
+      </div>
+      <button className="btn sm" disabled={!num.trim() || busy} onClick={search}>
+        {busy ? <span className="spinner" /> : <Icon name="search" size={16} />} Chercher
+      </button>
+      {err && <div className="error">{err}</div>}
+    </div>
+  );
+}
+
+function ShiftPreview({ plan, back }: { plan: NonNullable<ReturnType<typeof buildPlan>>; back?: boolean }) {
+  const j = back && plan.back ? plan.back : plan.out;
+  const shift = j.shiftH;
+  const dirLabel = shift > 0 ? "vers l'est" : shift < 0 ? "vers l'ouest" : "même heure";
+  let text: string;
+  if (back && plan.back) {
+    text =
+      j.strategy === "advance" || j.strategy === "delay"
+        ? `${plan.stayNights} nuit${plan.stayNights > 1 ? "s" : ""} sur place${plan.alignedAtReturn !== undefined && plan.alignedAtReturn < 0.95 ? `, adapté(e) à ~${Math.round(plan.alignedAtReturn * 100)} % au départ` : ""}. ~${j.adaptDays} jour${j.adaptDays > 1 ? "s" : ""} pour te recaler une fois rentré(e).`
+        : plan.strategy === "stay"
+          ? "Séjour court : ton corps reste à l'heure de chez toi, rien à rattraper au retour."
+          : "Rien de notable à rattraper au retour.";
+  } else
+    text =
+      plan.strategy === "none"
+        ? "Pas de décalage horaire notable : on s'occupe surtout du vol."
+        : plan.strategy === "stay"
+          ? `Séjour court : tu restes calé(e) sur l'heure de ${cityLabel(plan.home)}.`
+          : `Adapté(e) en ~${Math.max(1, plan.adaptDays)} jour${plan.adaptDays > 1 ? "s" : ""} avec le plan, contre ~${plan.adaptDaysNoPlan} sans.`;
   return (
     <div className="card flat row" style={{ padding: 16, gap: 14, marginTop: 6 }}>
-      <div className="shift" style={{ fontSize: 40, color: plan.shiftH > 0 ? "var(--sun)" : plan.shiftH < 0 ? "var(--sleep)" : "var(--muted)" }}>
-        {signed(plan.shiftH)}
+      <div className="shift" style={{ fontSize: 40, color: shift > 0 ? "var(--sun)" : shift < 0 ? "var(--sleep)" : "var(--muted)" }}>
+        {signed(shift)}
       </div>
       <div className="small">
-        <b>{plan.shiftH > 0 ? "Vers l'est" : plan.shiftH < 0 ? "Vers l'ouest" : "Même heure"}</b>
+        <b>{back ? `Retour ${dirLabel}` : dirLabel[0].toUpperCase() + dirLabel.slice(1)}</b>
         <div className="muted">{text}</div>
       </div>
     </div>

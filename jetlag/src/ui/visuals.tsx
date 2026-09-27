@@ -25,9 +25,9 @@ export const KIND_META: Record<EventKind, { icon: string; tone: string }> = {
 /** A calm horizontal bar showing the day's windows at a glance. */
 export function DayStrip({ day, plan, now }: { day: PlanDay; plan: Plan; now: number }) {
   // Show a full local day for normal days, the actual span for the travel day.
-  const start = day.phase === "travel" ? Math.min(day.start, plan.leaveHome - 2 * HOUR) : day.start;
+  const travel = day.phase === "out" || day.phase === "back";
   const end = day.end;
-  const rangeStart = day.phase === "travel" ? start : day.end - 24 * HOUR;
+  const rangeStart = travel ? day.start : day.end - 24 * HOUR;
   const span = end - rangeStart;
   const pct = (t: number) => `${Math.max(0, Math.min(100, ((t - rangeStart) / span) * 100))}%`;
   const width = (s: number, e: number) => `${Math.max(0, ((Math.min(e, end) - Math.max(s, rangeStart)) / span) * 100)}%`;
