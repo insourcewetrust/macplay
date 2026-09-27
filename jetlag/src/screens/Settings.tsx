@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { exportData, importData, updateProfile, updateSettings, useStore } from "../lib/store";
 import { Segmented, Toast } from "../ui/controls";
+import { android } from "../lib/ics";
 import { Icon } from "../ui/Icon";
 import { AlliesFields, RhythmFields } from "./ProfileFields";
 
@@ -12,6 +13,8 @@ export function Settings() {
   const file = useRef<HTMLInputElement>(null);
 
   const doExport = () => {
+    const bridge = android();
+    if (bridge) return bridge.saveFile(`fuseau-sauvegarde-${new Date().toISOString().slice(0, 10)}.json`, "application/json", exportData());
     const blob = new Blob([exportData()], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);

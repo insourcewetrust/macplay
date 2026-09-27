@@ -42,4 +42,26 @@ Le modèle est dans `src/lib/engine.ts`, les contenus du guide dans `src/content
 Les données d'aéroports se régénèrent avec `scripts/build-airports.py` (OurAirports + mwgg/Airports) et
 `scripts/build-airlines.py` (OpenFlights).
 
+## Application Android
+
+L'APK signé est dans [`release/fuseau.apk`](release/fuseau.apk) (Android 6 et plus). Sur le téléphone :
+télécharge-le, ouvre-le, autorise l'installation depuis cette source, puis « Installer ».
+
+C'est la même app, embarquée dans une WebView native (`android/`), avec en plus :
+- **Ajout au calendrier** : les rappels (lumière, mélatonine, dernier café, trajets…) vont directement
+  dans ton agenda Android, avec alerte. Un nouvel export remplace l'ancien pour ce voyage.
+- **Sauvegarde** dans le dossier Téléchargements, **restauration** via le sélecteur de fichiers.
+- Bouton retour Android, barres système aux couleurs de l'app (clair et sombre), fonctionne hors ligne.
+
+Reconstruire (sans Android Studio ni Gradle) :
+
+```sh
+sudo apt-get install aapt apksigner zipalign dalvik-exchange android-sdk-platform-23
+android/build-apk.sh   # -> release/fuseau.apk
+```
+
+La clé de signature `android/fuseau.keystore` est versionnée pour que chaque nouvelle version s'installe
+par-dessus l'ancienne sans perdre tes données. Pour une diffusion publique, utilise ta propre clé
+(`KEYSTORE=… KEYSTORE_PASS=… android/build-apk.sh`).
+
 Ce n'est pas un dispositif médical.

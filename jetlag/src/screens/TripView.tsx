@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { cityLabel } from "../lib/airports";
 import type { Plan, PlanDay, PlanEvent } from "../lib/engine";
 import { dayLong, dayShort, hmShort, signed } from "../lib/format";
-import { downloadIcs } from "../lib/ics";
+import { exportCalendar } from "../lib/ics";
 import { deleteTrip, useStore } from "../lib/store";
 import { planFor, useNow } from "../lib/usePlan";
 import { MIN } from "../lib/time";
@@ -73,9 +73,8 @@ export function TripView({ id }: { id: string }) {
             <button
               role="menuitem"
               onClick={() => {
-                downloadIcs(plan);
                 setMenu(false);
-                setToast("Fichier calendrier créé. Ouvre-le pour ajouter les rappels.");
+                setToast(exportCalendar(plan));
               }}
             >
               <Icon name="calendar" size={18} /> Ajouter à mon calendrier
@@ -159,8 +158,7 @@ export function TripView({ id }: { id: string }) {
         <button
           className="btn soft block"
           onClick={() => {
-            downloadIcs(plan);
-            setToast("Fichier calendrier créé. Ouvre-le pour ajouter les rappels.");
+            setToast(exportCalendar(plan));
           }}
         >
           <Icon name="calendar" size={18} /> Ajouter les rappels à mon calendrier

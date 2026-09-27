@@ -3,7 +3,7 @@ import type { Plan, PlanEvent } from "./engine";
 const EXPORTED: PlanEvent["kind"][] = ["sleep", "nap", "light-seek", "light-avoid", "melatonin", "caffeine", "transport", "boarding"];
 
 const stamp = (ms: number) => new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\;");
+const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
 
 // RFC 5545: fold lines longer than 75 octets.
 const fold = (line: string) => {
@@ -43,6 +43,39 @@ export function planToIcs(plan: Plan): string {
   }
   lines.push("END:VCALENDAR");
   return lines.join("\r\n");
+}
+
+interface AndroidBridge {
+  addToCalendar(json: string): void;
+  saveFile(name: string, mime: string, content: string): void;
+}
+export const android = (): AndroidBridge | undefined => (window as unknown as { FuseauAndroid?: AndroidBridge }).FuseauAndroid;
+
+/** Android app: write the reminders straight into the phone's calendar. Returns false on the web. */
+function addToAndroidCalendar(plan: Plan): boolean {
+  const a = android();
+  if (!a) return false;
+  const events = plan.events
+    .filter((e) => EXPORTED.includes(e.kind))
+    .map((e) => {
+      const isCaf = e.kind === "caffeine";
+      return {
+        start: isCaf ? e.end! - 30 * 60_000 : e.start,
+        end: isCaf ? e.end! : e.end ?? e.start + 15 * 60_000,
+        title: isCaf ? `Dernier café ou thé (limite ${e.title.split("jusqu'à ")[1] ?? ""})` : e.title,
+        description: [e.detail, ...(e.bullets ?? [])].filter(Boolean).join("\n"),
+        alarm: e.kind !== "sleep",
+      };
+    });
+  a.addToCalendar(JSON.stringify({ tag: `[Fuseau ${plan.trip.id}]`, events }));
+  return true;
+}
+
+/** Returns the message to show the user. */
+export function exportCalendar(plan: Plan): string {
+  if (addToAndroidCalendar(plan)) return "Ajout des rappels à ton calendrier…";
+  downloadIcs(plan);
+  return "Fichier calendrier créé. Ouvre-le pour ajouter les rappels.";
 }
 
 export function downloadIcs(plan: Plan) {
