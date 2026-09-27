@@ -105,4 +105,10 @@
     <string name="wear_model_fitted">Acceleration calibrated on your measurements.</string>
     <string name="wear_model_default">Acceleration set to a typical value until 3 measurements exist.</string>
     <string name="never">beyond the chart</string>
+    <string name="cycles_chart_title">Charge cycles over time</string>
+    <string name="cycles_no_data">Unlock the exact value to start the curve</string>
+    <string name="cycles_summary">About %1$.2f charge cycles per day today, versus %2$.2f at first use, heading to %3$.2f in a year as the battery shrinks.</string>
+    <string name="cycles_measured_avg_first">Measured average since first use: %1$.2f per day.</string>
+    <string name="cycles_measured_avg">Measured average since the previous capture: %1$.2f per day.</string>
+    <string name="cycles_chart_hint">Solid line: measured cumulative cycles (0 at first use, then each capture). Dashed line: expected cycles if your daily energy use stays the same while capacity shrinks. Compare the measured average with the model to see whether your daily charging really increases.</string>
 </resources>

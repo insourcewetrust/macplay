@@ -36,6 +36,7 @@ data class BatteryInfo(
     val currentNowMa: Int?,
     val remainingMah: Int?,
     val history: List<Pair<Long, Int>>,
+    val cycleHistory: List<Pair<Long, Int>>,
     val raw: String,
 )
 
@@ -128,16 +129,23 @@ object BatteryReader {
             .find(dump)?.groupValues?.get(1)
     }
 
-    private fun readHistory(prefs: android.content.SharedPreferences): List<Pair<Long, Int>> =
+    /** Une capture de l'historique : date, asoc, et cycles si connus. */
+    data class Capture(val ts: Long, val asoc: Int, val cycle: Int?)
+
+    private fun readCaptures(prefs: android.content.SharedPreferences): List<Capture> =
         prefs.getString("history", null).orEmpty()
             .split(';')
             .mapNotNull { entry ->
                 val parts = entry.split(',')
                 val ts = parts.getOrNull(0)?.toLongOrNull()
                 val asoc = parts.getOrNull(1)?.toIntOrNull()
-                if (ts != null && asoc != null) ts to asoc else null
+                val cycle = parts.getOrNull(2)?.toIntOrNull()?.takeIf { it >= 0 }
+                if (ts != null && asoc != null) Capture(ts, asoc, cycle) else null
             }
-            .sortedBy { it.first }
+            .sortedBy { it.ts }
+
+    private fun readHistory(prefs: android.content.SharedPreferences): List<Pair<Long, Int>> =
+        readCaptures(prefs).map { it.ts to it.asoc }
 
     private const val UEVENT_PATH = "/sys/class/power_supply/battery/uevent"
 
@@ -189,10 +197,13 @@ object BatteryReader {
             // Historique des captures (un point par jour) pour la courbe d'usure.
             if (asoc != null) {
                 val now = System.currentTimeMillis()
-                val history = readHistory(prefs)
-                    .filter { now - it.first >= 86_400_000L }
-                    .plus(now to asoc)
-                editor.putString("history", history.joinToString(";") { "${it.first},${it.second}" })
+                val history = readCaptures(prefs)
+                    .filter { now - it.ts >= 86_400_000L }
+                    .plus(Capture(now, asoc, cycle))
+                editor.putString(
+                    "history",
+                    history.joinToString(";") { "${it.ts},${it.asoc},${it.cycle ?: -1}" },
+                )
             }
             // Diagnostic complet, visible dans "données brutes".
             editor.putString("shell_dump", (dump ?: "empty").take(4000))
@@ -382,10 +393,17 @@ object BatteryReader {
                 ?.takeIf { it != Int.MIN_VALUE }?.let { it / 1000 }
         }
         val remainingMah = chargeCounterUah?.let { it / 1000 }
-        var history = readHistory(prefs)
+        val captures = readCaptures(prefs)
+        var history = captures.map { it.ts to it.asoc }
+        var cycleHistory = captures.mapNotNull { c -> c.cycle?.let { c.ts to it } }
+        val captureTs = prefs.getLong("ts", 0L).takeIf { it > 0 } ?: System.currentTimeMillis()
         if (history.isEmpty() && health != null && source == HealthSource.ASOC) {
-            val ts = prefs.getLong("ts", 0L).takeIf { it > 0 } ?: System.currentTimeMillis()
-            history = listOf(ts to health)
+            history = listOf(captureTs to health)
+        }
+        // Les captures d'avant l'historique des cycles n'en ont pas : on
+        // rattache le compteur connu à la dernière capture.
+        if (cycleHistory.isEmpty() && cycles != null && cycleApprox) {
+            cycleHistory = listOf(captureTs to cycles)
         }
 
         // Date de la dernière capture shell, seulement si la santé en provient.
@@ -448,6 +466,7 @@ object BatteryReader {
             currentNowMa = currentNowMa,
             remainingMah = remainingMah,
             history = history,
+            cycleHistory = cycleHistory,
             raw = raw,
         )
     }

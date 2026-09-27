@@ -127,7 +127,7 @@ class MainActivity : AppCompatActivity() {
                     firstUseDate = null, firstUseMillis = null, capturedAt = null,
                     batteryModel = null, technology = null, statusCode = null,
                     pluggedCode = null, healthCode = null, currentNowMa = null,
-                    remainingMah = null, history = emptyList(),
+                    remainingMah = null, history = emptyList(), cycleHistory = emptyList(),
                     raw = android.util.Log.getStackTraceString(t),
                 )
             }
@@ -210,7 +210,8 @@ class MainActivity : AppCompatActivity() {
             if (info.cycleCount != null && info.cycleApprox) View.VISIBLE else View.GONE
 
         bindDetails(info)
-        bindWear(info)
+        val wear = bindWear(info)
+        bindCycles(info, wear)
 
         rawText.text = info.raw
 
@@ -261,7 +262,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun bindWear(info: BatteryInfo) {
+    private fun bindWear(info: BatteryInfo): WearModel.Projection? {
         val chart = findViewById<WearChartView>(R.id.wearChart)
         val summary = findViewById<TextView>(R.id.wearSummary)
         val exact = if (info.healthSource == HealthSource.ASOC) info.healthPercent else null
@@ -269,11 +270,11 @@ class MainActivity : AppCompatActivity() {
         chart.setProjection(projection)
         if (projection == null) {
             summary.text = getString(R.string.wear_no_data)
-            return
+            return null
         }
         if (!projection.declining) {
             summary.text = getString(R.string.wear_flat)
-            return
+            return projection
         }
         val now = System.currentTimeMillis()
         val oneYear = 365L * 86_400_000L
@@ -293,6 +294,39 @@ class MainActivity : AppCompatActivity() {
         text.append(' ').append(
             getString(if (projection.fittedP) R.string.wear_model_fitted else R.string.wear_model_default)
         )
+        summary.text = text
+        return projection
+    }
+
+    private fun bindCycles(info: BatteryInfo, wear: WearModel.Projection?) {
+        val chart = findViewById<CycleChartView>(R.id.cycleChart)
+        val summary = findViewById<TextView>(R.id.cycleSummary)
+        val model = CycleModel.build(info.firstUseMillis, info.cycleHistory, wear)
+        chart.setModel(model)
+        if (model == null) {
+            summary.text = getString(R.string.cycles_no_data)
+            return
+        }
+        val now = System.currentTimeMillis()
+        val oneYear = 365L * 86_400_000L
+        val text = StringBuilder(
+            getString(
+                R.string.cycles_summary,
+                model.ratePerDayAt(now),
+                model.ratePerDayAt(model.t0),
+                model.ratePerDayAt(now + oneYear),
+            )
+        )
+        val measured = model.lastMeasuredRate()
+        if (measured != null) {
+            text.append(' ').append(
+                getString(
+                    if (model.points.size <= 2) R.string.cycles_measured_avg_first
+                    else R.string.cycles_measured_avg,
+                    measured,
+                )
+            )
+        }
         summary.text = text
     }
 
