@@ -12,7 +12,7 @@
 // - Stays of 3 nights or less keep the body on home time (Waterhouse 2007).
 // - Caffeine keeps disturbing sleep 6 h before bed (Drake 2013): default cutoff 8 h.
 
-import { airport, cityLabel, type Airport } from "./airports";
+import { airport, cityLabel, estimateBlockMinutes, type Airport } from "./airports";
 import { isDaylight } from "./sun";
 import { DAY, HOUR, MIN, addDaysKey, fromZoned, hmToMin, mod, startOfDay, tzOffset, zoned } from "./time";
 import type { GroundTransport, Leg, Profile, TransportMode, Trip } from "./types";
@@ -102,6 +102,7 @@ export interface Plan {
   out: JourneyInfo;
   back?: JourneyInfo;
   stayNights: number; // Infinity when unknown
+  backEstimated: boolean; // way back built from a date and an approximate time, no flight details
   alignedAtReturn?: number; // 0..1 how adapted to the destination when flying back
   departure: number;
   arrival: number;
@@ -224,6 +225,18 @@ export function buildPlan(profile: Profile, trip: Trip): Plan | null {
   let outLegs = timed(trip.legs);
   let backLegs = timed(trip.returnLegs);
   if (!outLegs.length) return null;
+  // Only a date (and maybe a rough time) for the way back: plan it on the reverse route.
+  let backEstimated = false;
+  if (!backLegs.length && trip.returnDate) {
+    const o = outLegs[0].t.from, d = outLegs[outLegs.length - 1].t.to;
+    const dep = fromZoned(`${trip.returnDate}T${trip.returnTime ?? "12:00"}`, d.tz);
+    const arr = dep + estimateBlockMinutes(d, o) * MIN;
+    const z = zoned(arr, o.tz);
+    const leg: Leg = { id: "return-estimate", from: d.iata, to: o.iata, dep: `${trip.returnDate}T${trip.returnTime ?? "12:00"}`, arr: `${z.dateKey}T${z.hm}`, cabin: "eco", source: "estimate" };
+    backLegs = timed([leg]);
+    backEstimated = backLegs.length > 0 && backLegs[0].t.dep > outLegs[outLegs.length - 1].t.arr;
+    if (!backEstimated) backLegs = [];
+  }
   // Older trips may hold the way back inside `legs`.
   if (!backLegs.length) {
     const groups = splitJourneys(outLegs);
@@ -974,7 +987,7 @@ export function buildPlan(profile: Profile, trip: Trip): Plan | null {
     trip, home, dest, homeTz, destTz, shiftH: S, strategy: outStrategy, targetH: outTarget,
     adaptDays: outAdaptDays, adaptDaysNoPlan: outNoPlan,
     rateH: outTarget > 0 ? rateAdv : rateDel, rateNoPlanH: outTarget > 0 ? 1 : 1.5,
-    out: outInfo, back: backInfo, stayNights, alignedAtReturn,
+    out: outInfo, back: backInfo, stayNights, alignedAtReturn, backEstimated,
     departure: J1.departure, arrival: J1.arrival, leaveHome: J1.leaveDoor, reachHotel: J1.reachDoor,
     start, end, shortTrip, events, days,
     bodyOffsetAt, bodyMinutesAt, alignmentAt, placeAt, tzAt, altTzAt,

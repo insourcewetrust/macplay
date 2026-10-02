@@ -41,6 +41,7 @@ export interface Trip {
   fromAirport: GroundTransport;
   preDays: number; // 0..3 days of pre-adjustment at home
   returnDate?: string; // "YYYY-MM-DD", used when the return flight isn't known yet
+  returnTime?: string; // "HH:mm" approximate take-off (local), with returnDate
   stayOnHomeTime?: boolean; // user choice for short trips
   createdAt: number;
 }

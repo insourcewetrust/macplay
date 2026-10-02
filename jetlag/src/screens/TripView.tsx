@@ -220,6 +220,12 @@ function BackSummary({ plan }: { plan: Plan }) {
             ? `Séjour de ${plan.stayNights} nuit${plan.stayNights > 1 ? "s" : ""} : tu seras adapté(e) à ~${Math.round(plan.alignedAtReturn * 100)} % au départ du retour, donc moins à rattraper. `
             : ""}
           {moving ? `~${b.adaptDays} jour${b.adaptDays > 1 ? "s" : ""} pour te recaler une fois rentré(e).` : plan.strategy === "stay" ? "Ton corps est resté à l'heure de chez toi." : ""}
+          {plan.backEstimated && (
+            <>
+              {" "}
+              <a href={`#/edit/${plan.trip.id}`}>Horaires du retour estimés : précise ton vol</a>.
+            </>
+          )}
         </div>
       </div>
     </div>

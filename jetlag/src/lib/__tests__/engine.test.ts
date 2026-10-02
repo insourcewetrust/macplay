@@ -117,3 +117,14 @@ describe("round trips", () => {
     expect(p.back!.adaptDays).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe("return known by date only", () => {
+  it("plans an estimated way back from a date and a rough time", () => {
+    const p = buildPlan(profile, trip([TYO], { returnDate: "2026-10-15", returnTime: "10:30" }))!;
+    expect(p.backEstimated).toBe(true);
+    expect(p.back).toBeDefined();
+    expect(p.back!.to.iata).toBe("CDG");
+    expect(p.days.some((d) => d.phase === "back")).toBe(true);
+    expect(p.days.some((d) => d.phase === "home")).toBe(true);
+  });
+});

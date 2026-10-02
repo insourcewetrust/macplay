@@ -119,8 +119,8 @@ export function NewTrip({ editId }: { editId?: string }) {
   // The trip as it will be saved, depending on the return choice.
   const effective = useMemo<Trip>(() => {
     if (retMode === "flight") return { ...trip, returnDate: undefined };
-    if (retMode === "date") return { ...trip, returnLegs: undefined, returnPreDays: undefined };
-    return { ...trip, returnLegs: undefined, returnDate: undefined, returnPreDays: undefined };
+    if (retMode === "date") return { ...trip, returnLegs: undefined };
+    return { ...trip, returnLegs: undefined, returnDate: undefined, returnTime: undefined, returnPreDays: undefined };
   }, [trip, retMode]);
   const plan = useMemo(() => (legsOk && !retErr ? buildPlan(profile, effective) : legsOk ? buildPlan(profile, { ...effective, returnLegs: undefined }) : null), [profile, effective, legsOk, retErr]);
 
@@ -207,8 +207,8 @@ export function NewTrip({ editId }: { editId?: string }) {
               if (m === "flight" && !(trip.returnLegs ?? []).length) setReturnLegs([reverseLeg(trip.legs)]);
             }}
             options={[
-              { value: "flight", label: "Vol retour" },
-              { value: "date", label: "Date seulement" },
+              { value: "flight", label: "Mon vol" },
+              { value: "date", label: "Date et heure" },
               { value: "none", label: "Aller simple" },
             ]}
           />
@@ -223,17 +223,40 @@ export function NewTrip({ editId }: { editId?: string }) {
             </>
           )}
           {retMode === "date" && (
-            <div className="field">
-              <label htmlFor="ret">Date du retour</label>
-              <input
-                id="ret"
-                className="input"
-                type="date"
-                value={trip.returnDate ?? ""}
-                min={plan ? zoned(plan.arrival, plan.destTz).dateKey : undefined}
-                onChange={(e) => setTrip({ ...trip, returnDate: e.target.value || undefined })}
-              />
-              <span className="hint">Sans le vol, on adapte le séjour à sa durée. Ajoute le vol retour plus tard pour avoir le plan du retour.</span>
+            <div className="stack">
+              <div className="grid-2">
+                <div className="field">
+                  <label htmlFor="ret">Date du retour</label>
+                  <input
+                    id="ret"
+                    className="input"
+                    type="date"
+                    value={trip.returnDate ?? ""}
+                    min={plan ? zoned(plan.arrival, plan.destTz).dateKey : undefined}
+                    onChange={(e) => setTrip({ ...trip, returnDate: e.target.value || undefined })}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="rett">Décollage (environ)</label>
+                  <input id="rett" className="input time" type="time" value={trip.returnTime ?? "12:00"} onChange={(e) => setTrip({ ...trip, returnTime: e.target.value || undefined })} />
+                </div>
+              </div>
+              <div className="chips" role="group" aria-label="Moment du décollage">
+                {[
+                  ["Matin", "09:00"],
+                  ["Midi", "13:00"],
+                  ["Soir", "19:00"],
+                  ["Nuit", "23:30"],
+                ].map(([l, v]) => (
+                  <button key={v} className="chip" aria-pressed={(trip.returnTime ?? "12:00") === v} onClick={() => setTrip({ ...trip, returnTime: v })}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <span className="hint">
+                Heure locale de {cityLabel(airport(trip.legs[trip.legs.length - 1]?.to))}. On estime la durée du vol de retour et on planifie quand même ton retour et ta réadaptation. Tu
+                pourras préciser le vol plus tard.
+              </span>
             </div>
           )}
           {retMode === "none" && <p className="hint">Pas de souci : le plan s'arrête quand tu es adapté(e) sur place.</p>}
@@ -432,7 +455,7 @@ function ShiftPreview({ plan, back }: { plan: NonNullable<ReturnType<typeof buil
   if (back && plan.back) {
     text =
       j.strategy === "advance" || j.strategy === "delay"
-        ? `${plan.stayNights} nuit${plan.stayNights > 1 ? "s" : ""} sur place${plan.alignedAtReturn !== undefined && plan.alignedAtReturn < 0.95 ? `, adapté(e) à ~${Math.round(plan.alignedAtReturn * 100)} % au départ` : ""}. ~${j.adaptDays} jour${j.adaptDays > 1 ? "s" : ""} pour te recaler une fois rentré(e).`
+        ? `${plan.stayNights} nuit${plan.stayNights > 1 ? "s" : ""} sur place. Le plan prépare ton retour et ta réadaptation à la maison (le détail dépend de tes choix à la dernière étape).`
         : plan.strategy === "stay"
           ? "Séjour court : ton corps reste à l'heure de chez toi, rien à rattraper au retour."
           : "Rien de notable à rattraper au retour.";
