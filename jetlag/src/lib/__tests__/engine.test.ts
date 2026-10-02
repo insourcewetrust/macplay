@@ -83,7 +83,7 @@ describe("engine", () => {
     if (process.env.DUMP) console.log(dump(p));
     expect(p.strategy).toBe("stay");
     expect(p.stayNights).toBe(2);
-    expect(Math.abs(p.bodyOffsetAt(p.back!.departure))).toBeLessThan(0.5);
+    expect(Math.abs(p.bodyOffsetAt(p.back!.departure))).toBeLessThan(1.5);
   });
 
   it("Paris -> Sydney via Dubai is planned as a delay", () => {
@@ -104,5 +104,16 @@ describe("engine", () => {
   it("domestic flight has no shift", () => {
     const p = buildPlan(profile, trip([{ id: "l1", from: "ORY", to: "NCE", dep: "2026-10-10T10:30", arr: "2026-10-10T11:50", cabin: "eco" }]))!;
     expect(p.strategy).toBe("none");
+  });
+});
+
+describe("round trips", () => {
+  it("a 3-night stay still plans the way back (the body drifts a bit)", () => {
+    const back = { id: "r", from: "HND", to: "CDG", dep: "2026-10-14T10:25", arr: "2026-10-14T17:40", cabin: "eco" as const };
+    const p = buildPlan(profile, trip([TYO], { returnLegs: [back] }))!;
+    if (process.env.DUMP) console.log(dump(p));
+    expect(p.strategy).toBe("stay");
+    expect(p.back!.strategy).not.toBe("stay");
+    expect(p.back!.adaptDays).toBeGreaterThanOrEqual(1);
   });
 });

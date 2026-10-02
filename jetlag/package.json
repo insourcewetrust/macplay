@@ -1,7 +1,7 @@
 {
   "name": "fuseau",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Fuseau : un plan anti-jet lag réaliste, heure par heure.",
   "type": "module",
   "scripts": {

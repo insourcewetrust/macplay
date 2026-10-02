@@ -246,6 +246,9 @@ export function buildPlan(profile: Profile, trip: Trip): Plan | null {
   const rateAdv = 1.25 + (profile.melatonin ? 0.25 : 0);
   const rateDel = 1.75;
   const ratePre = 0.5;
+  // On a short stay you still live with local daylight: even when trying to hold home time,
+  // the clock drifts toward local time. Conservative estimate, half the slowest natural rate.
+  const rateDrift = 0.5;
 
   // ---------- Journeys (door to door) ----------
   const mkJourney = (kind: "out" | "back", legs: TimedLeg[], toAir: GroundTransport, fromAir: GroundTransport) => {
@@ -278,7 +281,7 @@ export function buildPlan(profile: Profile, trip: Trip): Plan | null {
   const outStrategy: Strategy = Math.abs(S) < 1 ? "none" : stayMode ? "stay" : clockPath(S) > 0 ? "advance" : "delay";
   const outTarget = outStrategy === "advance" || outStrategy === "delay" ? clockPath(S) : 0;
   const preOut = outStrategy === "advance" || outStrategy === "delay" ? Math.min(3, trip.preDays) : 0;
-  const preBack = J2 && !stayMode && Math.abs(S) >= 1 ? Math.min(3, trip.returnPreDays ?? 0) : 0;
+  const preBack = J2 && !stayMode && Math.abs(S) >= 1 ? Math.min(3, trip.returnPreDays ?? (stayNights >= 3 && Math.abs(S) >= 4 ? 1 : 0)) : 0;
 
   const depKey = zoned(J1.departure, homeTz).dateKey;
   const preOutStart = fromZoned(`${addDaysKey(depKey, -preOut)}T${profile.wake}`, homeTz);
@@ -306,9 +309,9 @@ export function buildPlan(profile: Profile, trip: Trip): Plan | null {
       if (J2 && t >= preBackStart && preBack) {
         desired = 0;
         rate = ratePre;
-      } else if (!stayMode) {
+      } else {
         desired = S;
-        rate = 0; // chosen by direction below
+        rate = stayMode ? rateDrift : 0; // 0: chosen by direction below
       }
     } else if (J2 && t >= J2.arrival) desired = 0;
     if (desired === null) continue;
@@ -813,7 +816,9 @@ export function buildPlan(profile: Profile, trip: Trip): Plan | null {
     }
   };
   for (const cbt of cbts) {
-    const dir = dirAt(cbt);
+    // Short stay: light advice resists the drift and holds the body near home time.
+    const inShortStay = stayMode && cbt >= J1.arrival && (!J2 || cbt < J2.departure);
+    const dir = inShortStay ? (Math.abs(clockPath(bodyOffsetAt(cbt))) > 0.3 ? Math.sign(clockPath(-bodyOffsetAt(cbt))) : 0) : dirAt(cbt);
     if (!dir) continue;
     if (dir > 0) {
       addWindow({ start: cbt + 30 * MIN, end: cbt + 6 * HOUR }, true, dir);
@@ -985,7 +990,6 @@ function dayFocus(
   if (d.phase === "out") return "Jour du départ : on dort (ou pas) au bon moment, et on gère la lumière jusque dans le taxi.";
   if (d.phase === "back") return "Jour du retour : même logique qu'à l'aller, dans l'autre sens.";
   if (ctx.outStrategy === "none") return "Pas de décalage à gérer : garde tes horaires habituels.";
-  if (ctx.stayMode && d.phase === "stay") return `Séjour court : horaires de compromis, ton corps reste proche de l'heure de ${ctx.homeCity}.`;
   const seek = d.events.filter((e) => e.kind === "light-seek");
   const avoid = d.events.filter((e) => e.kind === "light-avoid");
   const hm = (t: number) => zoned(t, d.tz).hm;
@@ -994,8 +998,14 @@ function dayFocus(
     return ctx.outStrategy === "advance" ? "Préparation en douceur : lumière dès le réveil, coucher un peu plus tôt si tu peux." : "Préparation en douceur : lumière en fin de journée, coucher un peu plus tard si tu peux.";
   }
   const preBack = d.phase === "stay" && ctx.J2At && d.start >= ctx.preBackStart - 12 * HOUR;
-  const lead = preBack ? `Le retour approche : on revient doucement vers l'heure de ${ctx.homeCity}. ` : "";
+  const lead =
+    ctx.stayMode && d.phase === "stay"
+      ? `Séjour court : on reste proche de l'heure de ${ctx.homeCity}. `
+      : preBack
+        ? `Le retour approche : on revient doucement vers l'heure de ${ctx.homeCity}. `
+        : "";
   if (!seek.length && !avoid.length) {
+    if (ctx.stayMode && d.phase === "stay") return lead + "Pas de consigne de lumière aujourd'hui : repas à l'heure locale, au lit à l'heure prévue.";
     if (d.progress < 0.9) return lead + "Journée calme : repas à l'heure locale, au lit à l'heure prévue.";
     return lead + (d.phase === "home" ? "Tu es recalé(e) sur l'heure de chez toi." : "Ton horloge est alignée. Vis à l'heure locale.");
   }

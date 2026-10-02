@@ -134,7 +134,24 @@ export function TripView({ id }: { id: string }) {
             )}
           </div>
         </div>
-        {plan.back && <BackSummary plan={plan} />}
+        {plan.back ? (
+          <BackSummary plan={plan} />
+        ) : (
+          <button className="row" style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)", gap: 12, width: "100%", textAlign: "left" }} onClick={() => go(`/edit/${trip.id}`)}>
+            <span className="pill ghost" style={{ flexShrink: 0 }}>
+              <Icon name="landing" size={14} /> Retour
+            </span>
+            <span className="small" style={{ flex: 1 }}>
+              <b>{trip.returnDate ? "Ajoute ton vol retour" : "Tu as un retour ?"}</b>
+              <span className="muted" style={{ display: "block" }}>
+                {trip.returnDate
+                  ? "Avec les horaires du vol, le plan prépare aussi ton retour et ta réadaptation à la maison."
+                  : "Ajoute-le pour un plan complet : séjour, retour et réadaptation."}
+              </span>
+            </span>
+            <Icon name="chevron" size={16} />
+          </button>
+        )}
       </div>
 
       {active && (

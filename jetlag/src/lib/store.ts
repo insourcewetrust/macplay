@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
-import type { Profile, Trip } from "./types";
+import { airport } from "./airports";
+import type { Leg, Profile, Trip } from "./types";
 
 export interface Settings {
   aerodataboxKey?: string;
@@ -33,7 +34,7 @@ function load(): State {
     const s = JSON.parse(raw) as Partial<State>;
     return {
       profile: { ...defaultProfile, ...s.profile },
-      trips: Array.isArray(s.trips) ? s.trips : [],
+      trips: Array.isArray(s.trips) ? mergeRoundTrips(s.trips) : [],
       settings: { ...base.settings, ...s.settings },
     };
   } catch {
@@ -41,7 +42,43 @@ function load(): State {
   }
 }
 
+/** Same city or same country: CDG and ORY both count as "Paris". */
+function samePlace(a: string, b: string) {
+  if (a === b) return true;
+  const x = airport(a), y = airport(b);
+  return !!x && !!y && x.tz === y.tz && x.country === y.country;
+}
+
+const firstDep = (legs: Leg[]) => [...legs].sort((a, b) => a.dep.localeCompare(b.dep))[0];
+const lastArr = (legs: Leg[]) => [...legs].sort((a, b) => a.dep.localeCompare(b.dep))[legs.length - 1];
+
+/**
+ * Older versions created the outbound and the return as two trips. Merge a one-way trip with the
+ * next one-way trip that flies back from its destination to its origin within 60 days.
+ */
+export function mergeRoundTrips(trips: Trip[]): Trip[] {
+  const out = [...trips];
+  const removed = new Set<string>();
+  const sorted = [...out].sort((a, b) => (firstDep(a.legs)?.dep ?? "").localeCompare(firstDep(b.legs)?.dep ?? ""));
+  for (const t of sorted) {
+    if (removed.has(t.id) || t.returnLegs?.length || !t.legs.length) continue;
+    const o = firstDep(t.legs), d = lastArr(t.legs);
+    const back = sorted.find((r) => {
+      if (r === t || removed.has(r.id) || r.returnLegs?.length || !r.legs.length) return false;
+      const ro = firstDep(r.legs), rd = lastArr(r.legs);
+      const gap = (Date.parse(ro.dep.slice(0, 10)) - Date.parse(d.arr.slice(0, 10))) / 86_400_000;
+      return samePlace(ro.from, d.to) && samePlace(rd.to, o.from) && gap >= 0 && gap <= 60;
+    });
+    if (!back) continue;
+    const i = out.findIndex((x) => x.id === t.id);
+    out[i] = { ...t, returnLegs: back.legs, returnDate: undefined };
+    removed.add(back.id);
+  }
+  return out.filter((t) => !removed.has(t.id));
+}
+
 let state = load();
+save(); // persist migrations
 const listeners = new Set<() => void>();
 
 function save() {
